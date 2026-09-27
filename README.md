@@ -130,3 +130,5 @@ Without `ANTHROPIC_API_KEY`, photos are still saved, just not analyzed.
 - **One-time data migration** from the current Artifact (`read_db` dump →
   import into this schema) hasn't been done — this is a fresh, empty
   database until that happens.
+
+<!-- verifying git-triggered deploy -->
