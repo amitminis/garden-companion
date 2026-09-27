@@ -252,3 +252,19 @@
 
   [hidden]{ display:none !important; }
   .sr-only{ position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0); }
+
+  /* ---- section tab bar ---- */
+  .tab-bar{ display:flex; gap:6px; margin-bottom:20px; border-bottom:1px solid var(--line); }
+  .tab-btn{
+    appearance:none; border:none; background:none; color:var(--ink-faint); font-family:inherit;
+    font-size:13.5px; font-weight:600; padding:10px 14px; cursor:pointer; display:flex; align-items:center; gap:6px;
+    border-bottom:2px solid transparent; margin-bottom:-1px;
+  }
+  .tab-btn:hover{ color:var(--ink-soft); }
+  .tab-btn.active{ color:var(--moss-strong); border-bottom-color:var(--moss); }
+
+  /* ---- icon-only buttons (e.g. weather refresh) ---- */
+  .icon-btn{ display:inline-flex; align-items:center; justify-content:center; padding:8px; }
+  .icon-btn .icon{ margin:0; }
+  .icon-btn.spinning .icon{ animation:spin .8s linear infinite; }
+  @keyframes spin{ to{ transform:rotate(360deg); } }

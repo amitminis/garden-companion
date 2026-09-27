@@ -121,7 +121,7 @@
   // ---------------------------------------------------------------
   // State
   // ---------------------------------------------------------------
-  var state = { settings:null, plants:[], tasks:[], weather:null };
+  var state = { settings:null, plants:[], tasks:[], weather:null, section:"tasks" };
   var MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
   var DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
   // A fixed categorical palette so each plant gets a stable, distinguishable
@@ -142,7 +142,11 @@
       cloud:'<path d="M6 18a4 4 0 0 1 .3-8 5 5 0 0 1 9.6-1.6A4.5 4.5 0 0 1 17 18H6z"/>',
       rain:'<path d="M6 15a4 4 0 0 1 .3-8 5 5 0 0 1 9.6-1.6A4.5 4.5 0 0 1 17 15H6z"/><path d="M8 19l-1 2M12 19l-1 2M16 19l-1 2"/>',
       drop:'<path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/>',
-      scissors:'<circle cx="6" cy="6" r="2.2"/><circle cx="6" cy="18" r="2.2"/><path d="M20 6L7.5 15M20 18L7.5 9"/>'
+      scissors:'<circle cx="6" cy="6" r="2.2"/><circle cx="6" cy="18" r="2.2"/><path d="M20 6L7.5 15M20 18L7.5 9"/>',
+      refresh:'<path d="M20 11A8 8 0 0 0 6.3 6.3L4 8.6"/><path d="M4 4v4.6h4.6"/><path d="M4 13a8 8 0 0 0 13.7 4.7l2.3-2.3"/><path d="M20 20v-4.6h-4.6"/>',
+      library:'<rect x="4" y="4" width="7" height="16" rx="1"/><rect x="13" y="4" width="7" height="16" rx="1"/>',
+      calendar:'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+      tasks:'<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/>'
     };
     return '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+(paths[name]||paths.leaf)+'</svg>';
   }
@@ -171,7 +175,7 @@
       renderOnboarding();
     } else {
       await loadGardenData();
-      renderDashboard();
+      renderShell();
       subscribeLive();
       refreshWeatherNow(); // live weather check every time the app is opened — don't wait on the daily cron
     }
@@ -188,7 +192,7 @@
       var w = await api("/weather-refresh", {method:"POST"});
       if (w && !w.error){
         state.weather = w;
-        if (!modalOpenFor) renderDashboard();
+        if (!modalOpenFor) renderShell();
       }
     } catch(e){ /* silent — the cached weather card stays as-is */ }
     weatherRefreshing = false;
@@ -216,7 +220,7 @@
     livePolling = true;
     try {
       await loadGardenData();
-      if (!modalOpenFor) renderDashboard();
+      if (!modalOpenFor) renderShell();
     } catch(e){ /* transient — try again on the next tick */ }
     livePolling = false;
   }
@@ -227,9 +231,8 @@
   var onboard = {
     step: 0,
     location: null,
-    extracted: [],
-    photoQueue: [],
-    photoIndex: 0
+    wiz: null,
+    addedAny: false
   };
 
   // Plant type / spot dropdowns shared by onboarding's "Add your plants"
@@ -257,6 +260,22 @@
     return { select: select, customInput: customInput, getValue: function(){ return select.value === "__custom__" ? customInput.value.trim() : select.value; } };
   }
 
+  // Dropdown option lists for the plant wizard's "get to know it" fields —
+  // plain option pickers (no free-text) since these values feed straight
+  // into the AI care-card prompt as clean short labels.
+  var AGE_OPTIONS = ["Just planted","Less than 1 year","1–2 years","3–5 years","More than 5 years","Not sure"];
+  var SUN_OPTIONS = ["Full sun (6+ hrs)","Partial sun (4–6 hrs)","Partial shade (2–4 hrs)","Full shade (under 2 hrs)","Not sure"];
+  var WATERING_OPTIONS = ["Drip irrigation","Sprinkler","Hand watering","Rain-fed only","Not sure"];
+  var GROUND_OPTIONS = ["Clay soil","Sandy soil","Loamy soil","Raised bed","Pot / container","Not sure"];
+  function simpleSelect(options, selected, placeholder){
+    var opts = [el("option", {value:""}, [placeholder || "Choose…"])].concat(options.map(function(o){
+      var opt = el("option", {value:o}, [o]);
+      if (o === selected) opt.setAttribute("selected","selected");
+      return opt;
+    }));
+    return el("select", {}, opts);
+  }
+
   function renderOnboarding(){
     var app = document.getElementById("app");
     app.innerHTML = "";
@@ -274,8 +293,9 @@
   function onboardStepView(){
     if (onboard.step === 0) return stepWelcome();
     if (onboard.step === 1) return stepLocation();
-    if (onboard.step === 2) return stepAddPlants();
-    if (onboard.step === 3) return stepPhotos();
+    if (onboard.step === 2) return stepStartLibrary();
+    if (onboard.step === 3) return stepPlantWizard();
+    if (onboard.step === 4) return stepFinish();
     return stepWelcome();
   }
 
@@ -296,25 +316,58 @@
       el("p", {class:"lead"}, ["This sets your weather, frost dates, and planting calendar."])
     ]);
     var status = el("div", {class:"thinking", style:"margin-bottom:12px;"});
+    var confirmBox = el("div", {});
     var manual = el("input", {type:"text", placeholder:"City, region or country", value: onboard.location && onboard.location.label || ""});
     var gpsBtn = el("button", {class:"btn", style:"margin-bottom:14px;"}, ["Use my current location"]);
     gpsBtn.addEventListener("click", function(){
       if (!navigator.geolocation){ status.textContent = "Location services aren't available here — type it in below."; return; }
+      confirmBox.innerHTML = "";
       status.textContent = "Locating…";
       navigator.geolocation.getCurrentPosition(async function(pos){
         var lat = pos.coords.latitude, lon = pos.coords.longitude;
         status.textContent = "Got your coordinates — looking up the city name…";
         var cityLabel = await reverseGeocodeCity(lat, lon);
-        var label = cityLabel || manual.value || "Current location";
-        onboard.location = { label: label, lat: lat, lon: lon };
-        manual.value = label;
-        status.textContent = cityLabel ? ("Got it — using " + cityLabel + ".") : "Got your coordinates, but couldn't look up a city name — type one in below.";
+        status.textContent = "";
+        if (!cityLabel){
+          status.textContent = "Got your coordinates, but couldn't look up a city name — type one in below.";
+          return;
+        }
+        // Don't commit the detected city as the location yet — show it and
+        // let the user approve it (or fix it) before it's saved.
+        confirmBox.innerHTML = "";
+        confirmBox.appendChild(el("div", {class:"card", style:"padding:12px 14px;margin-bottom:14px;"}, [
+          el("div", {style:"font-size:12.5px;color:var(--ink-faint);margin-bottom:4px;"}, ["We found:"]),
+          el("div", {style:"font-weight:600;font-size:14.5px;margin-bottom:10px;"}, [cityLabel]),
+          el("div", {class:"row", style:"gap:8px;"}, [
+            (function(){
+              var useBtn = el("button", {class:"btn btn-primary btn-sm"}, ["✓ Use this"]);
+              useBtn.addEventListener("click", function(){
+                onboard.location = { label: cityLabel, lat: lat, lon: lon };
+                manual.value = cityLabel;
+                confirmBox.innerHTML = "";
+                status.textContent = "Using " + cityLabel + ".";
+              });
+              return useBtn;
+            })(),
+            (function(){
+              var editBtn = el("button", {class:"btn btn-ghost btn-sm"}, ["Edit manually"]);
+              editBtn.addEventListener("click", function(){
+                manual.value = cityLabel;
+                manual.focus();
+                confirmBox.innerHTML = "";
+                status.textContent = "";
+              });
+              return editBtn;
+            })()
+          ])
+        ]));
       }, function(){
         status.textContent = "Couldn't get your location — type it in below instead.";
       }, {timeout:8000});
     });
     card.appendChild(gpsBtn);
     card.appendChild(status);
+    card.appendChild(confirmBox);
     card.appendChild(el("div", {class:"field"}, [
       el("label", {}, ["Or enter it manually"]),
       manual
@@ -334,176 +387,323 @@
     return card;
   }
 
-  // Structured wizard for adding plants — dropdowns for type and spot
-  // instead of a free-text description handed to AI to guess-parse. Each
-  // "+ Add this plant" click appends one entry to onboard.extracted; the
-  // running list below can be trimmed with Remove.
-  function stepAddPlants(){
+  // ---- "Start building your library now?" (onboarding only) ----
+  function stepStartLibrary(){
     var card = el("div", {class:"onboard-card card"}, [
-      progressDots(1),
+      progressDots(1, 3),
       el("div", {class:"onboard-step-label"}, ["Step 2 of 3"]),
-      el("h2", {}, ["Add your plants"]),
-      el("p", {class:"lead"}, ["Add each tree, bush, flower or vegetable one at a time. Pick a type and spot from the dropdowns — I'll build a care guide for each one once it's saved."])
+      el("h2", {}, ["Want to start building your plant library now?"]),
+      el("p", {class:"lead"}, ["I'll guide you through adding each plant with a short form — or you can skip this and do it anytime from the Library section."])
     ]);
-
-    var nameInput = el("input", {type:"text", placeholder:"e.g. Meyer lemon tree"});
-    var typeSelect = el("select", {}, typeOptions("other"));
-    var spot = spotPicker("");
-    var speciesInput = el("input", {type:"text", placeholder:"e.g. Citrus × meyeri"});
-    var notesInput = el("textarea", {placeholder:"Anything else worth noting?", style:"min-height:50px;"});
-    var formError = el("div", {class:"empty", style:"margin:2px 0;"});
-
-    card.appendChild(el("div", {class:"field"}, [el("label",{},["Name"]), nameInput]));
-    card.appendChild(el("div", {class:"field"}, [el("label",{},["Type"]), typeSelect]));
-    card.appendChild(el("div", {class:"field"}, [el("label",{},["Spot in the garden"]), spot.select, spot.customInput]));
-    card.appendChild(el("div", {class:"field"}, [el("label",{},["Species or variety (optional)"]), speciesInput]));
-    card.appendChild(el("div", {class:"field"}, [el("label",{},["Notes (optional)"]), notesInput]));
-    card.appendChild(formError);
-
-    var addBtn = el("button", {class:"btn btn-primary btn-sm"}, ["+ Add this plant"]);
-    addBtn.addEventListener("click", function(){
-      var name = nameInput.value.trim();
-      if (!name){ formError.textContent = "Give it a name first."; return; }
-      onboard.extracted.push({
-        name: name,
-        type: typeSelect.value || "other",
-        spot: spot.getValue(),
-        species: speciesInput.value.trim(),
-        notes: notesInput.value.trim()
-      });
-      renderOnboarding();
-    });
-    card.appendChild(addBtn);
-
-    card.appendChild(el("div", {class:"section-head", style:"margin-top:18px;margin-bottom:0;"}, [
-      el("h3", {style:"font-size:13px;"}, ["Your garden so far (" + onboard.extracted.length + ")"])
-    ]));
-    var list = el("div", {style:"margin-top:4px;"});
-    if (onboard.extracted.length === 0){
-      list.appendChild(el("div", {class:"empty"}, ["No plants added yet — add one above, or continue and add plants later from the dashboard."]));
-    } else {
-      onboard.extracted.forEach(function(p, i){
-        var row = el("div", {class:"row", style:"justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line);"}, [
-          el("div", {style:"font-size:13.5px;"}, [
-            el("span", {style:"font-weight:600;"}, [p.name]),
-            " — " + p.type + (p.spot ? " · " + p.spot : "")
-          ]),
-          el("button", {class:"btn btn-ghost btn-sm"}, ["Remove"])
-        ]);
-        row.querySelector("button").addEventListener("click", function(){ onboard.extracted.splice(i,1); renderOnboarding(); });
-        list.appendChild(row);
-      });
-    }
-    card.appendChild(list);
-
-    var nextBtn = el("button", {class:"btn btn-primary", style:"margin-top:18px;"}, ["Save my garden →"]);
-    var saveError = el("div", {class:"empty", style:"margin-top:8px;"});
-    nextBtn.addEventListener("click", async function(){
-      nextBtn.disabled = true; nextBtn.textContent = "Saving…";
-      saveError.textContent = "";
-      try {
-        state.settings = await api("/settings", {method:"PATCH", body:{
-          location: onboard.location || {label:"Unspecified"},
-          onboarded: false,
-          reminderHour: 7,
-          photoCheckinDay: "Friday"
-        }});
-        var saved = [];
-        for (var i=0;i<onboard.extracted.length;i++){
-          var p = onboard.extracted[i];
-          // Remembered on the draft so a retry after a partial failure
-          // doesn't create the same plant twice.
-          if (!p.__createdId){
-            var created = await createPlant(p);
-            p.__createdId = created.id;
-          }
-          saved.push(Object.assign({}, p, {id:p.__createdId}));
-        }
-        onboard.photoQueue = saved;
-        onboard.photoIndex = 0;
-        onboard.step = 3;
-        renderOnboarding();
-      } catch(e){
-        nextBtn.disabled = false; nextBtn.textContent = "Save my garden →";
-        saveError.textContent = "Couldn't save your garden just now — try again.";
-      }
-    });
-    card.appendChild(nextBtn);
-    card.appendChild(saveError);
-    card.appendChild(el("div", {class:"row", style:"justify-content:space-between;margin-top:10px;"}, [
+    var yesBtn = el("button", {class:"btn btn-primary"}, ["Yes, let's add plants"]);
+    yesBtn.addEventListener("click", function(){ onboard.step=3; onboard.wiz=null; renderOnboarding(); });
+    var noBtn = el("button", {class:"btn btn-ghost"}, ["Not now"]);
+    noBtn.addEventListener("click", function(){ onboard.step=4; renderOnboarding(); });
+    card.appendChild(el("div", {class:"row", style:"gap:10px;margin-top:6px;"}, [yesBtn, noBtn]));
+    card.appendChild(el("div", {class:"row", style:"justify-content:flex-start;margin-top:16px;"}, [
       el("button", {class:"btn btn-ghost", onclick:function(){ onboard.step=1; renderOnboarding(); }}, ["← Back"])
     ]));
     return card;
   }
 
-  function stepPhotos(){
-    var card = el("div", {class:"onboard-card card"}, [
-      progressDots(2),
-      el("div", {class:"onboard-step-label"}, ["Step 3 of 3"]),
-    ]);
-    if (onboard.photoQueue.length === 0 || onboard.photoIndex >= onboard.photoQueue.length){
-      card.appendChild(el("h2", {}, ["All set"]));
-      card.appendChild(el("p", {class:"lead"}, ["Your garden is saved. I'm putting together a care guide and yearly schedule for each plant now — they'll be ready by the time you open your garden."]));
-      var finishBtn = el("button", {class:"btn btn-primary"}, ["Go to my garden →"]);
-      finishBtn.addEventListener("click", async function(){
-        finishBtn.disabled = true;
-        try {
-          await api("/settings", {method:"PATCH", body:{onboarded:true}});
-          state.settings = Object.assign({}, state.settings, {onboarded:true});
-          await loadGardenData();
-        } catch(e){
-          finishBtn.disabled = false;
-          finishBtn.textContent = "Couldn't reach the garden — try again";
-          return;
-        }
-        document.getElementById("app").innerHTML = "";
-        renderDashboard();
-        subscribeLive();
-      });
-      card.appendChild(finishBtn);
-      return card;
-    }
-    var plant = Object.assign({photos:[], activeIssue:null}, onboard.photoQueue[onboard.photoIndex]);
-    card.appendChild(el("h2", {}, ["A photo of your " + plant.name + "?"]));
-    card.appendChild(el("p", {class:"lead"}, ["Optional — helps me track size, health and spot issues over time. (" + (onboard.photoIndex+1) + " of " + onboard.photoQueue.length + ")"]));
-
-    var previewWrap = el("div", {});
-    var pick = el("label", {class:"photo-pick"}, ["Tap to choose a photo"]);
-    var input = el("input", {type:"file", accept:"image/*", class:"sr-only"});
-    pick.appendChild(input);
-    var analysisBox = el("div", {});
-    previewWrap.appendChild(pick);
-    previewWrap.appendChild(analysisBox);
-
-    var actions = el("div", {class:"row", style:"justify-content:space-between;margin-top:16px;"}, [
-      el("button", {class:"btn btn-ghost"}, ["Skip"]),
-      el("button", {class:"btn btn-primary"}, ["Continue →"])
-    ]);
-    var nextBtn = actions.children[1];
-    actions.children[0].addEventListener("click", function(){ onboard.photoIndex++; renderOnboarding(); });
-    nextBtn.addEventListener("click", function(){ onboard.photoIndex++; renderOnboarding(); });
-
-    input.addEventListener("change", async function(){
-      var file = input.files[0];
-      if (!file) return;
-      input.disabled = true;
-      var dataUrl = await resizeImage(file);
-      analysisBox.innerHTML = "";
-      analysisBox.appendChild(el("img", {class:"photo-preview", src:dataUrl}));
-      var thinking = el("div", {class:"thinking", style:"margin-top:8px;"}, ["Taking a look…"]);
-      analysisBox.appendChild(thinking);
-      var result = await analyzeAndApplyPlantPhoto(dataUrl, plant);
-      thinking.remove();
-      if (result && result.summary){
-        analysisBox.appendChild(el("div", {class:"agent-note"}, [result.summary]));
-      } else if (!result || result.__photoOnly){
-        analysisBox.appendChild(el("div", {class:"empty"}, [lastAnalysisMessage || ANALYZE_FAILED_MESSAGE]));
-      }
-      nextBtn.textContent = "Continue →";
+  function stepPlantWizard(){
+    if (!onboard.wiz) onboard.wiz = createWizardState();
+    return plantWizardCard(onboard.wiz, {
+      rerender: renderOnboarding,
+      onAdded: function(){ onboard.addedAny = true; },
+      onExit: function(){ onboard.step = 4; onboard.wiz = null; renderOnboarding(); }
     });
-    card.appendChild(previewWrap);
-    card.appendChild(actions);
+  }
+
+  function stepFinish(){
+    var card = el("div", {class:"onboard-card card"}, [
+      el("div", {class:"onboard-step-label"}, ["All set"]),
+      el("h2", {}, ["All set"]),
+      el("p", {class:"lead"}, [onboard.addedAny
+        ? "Your garden is saved — care guides and yearly schedules are ready for what you've added."
+        : "Your garden is set up. Add plants anytime from the Library section."])
+    ]);
+    var finishBtn = el("button", {class:"btn btn-primary"}, ["Go to my garden →"]);
+    finishBtn.addEventListener("click", async function(){
+      finishBtn.disabled = true;
+      try {
+        await api("/settings", {method:"PATCH", body:{onboarded:true}});
+        state.settings = Object.assign({}, state.settings, {onboarded:true});
+        await loadGardenData();
+      } catch(e){
+        finishBtn.disabled = false;
+        finishBtn.textContent = "Couldn't reach the garden — try again";
+        return;
+      }
+      document.getElementById("app").innerHTML = "";
+      state.section = "tasks";
+      renderShell();
+      subscribeLive();
+    });
+    card.appendChild(finishBtn);
     return card;
+  }
+
+  // ---------------------------------------------------------------
+  // PLANT WIZARD — a classic, one-field-per-screen setup wizard shared by
+  // onboarding's "Add your plants" step and the dashboard's "+ Add a plant"
+  // entry point. Dropdowns wherever the answer is from a fixed set; only
+  // Name/Species/Notes stay free text since they're inherently open-ended.
+  // Finishes by creating the plant, then handing everything collected
+  // (structured answers + photos) to POST /api/plants/:id/build-card, which
+  // does the AI work of turning it into a full care card in one call.
+  // ---------------------------------------------------------------
+  function createWizardState(){
+    return {
+      step: 0, name:"", type:"other", spot:"", species:"", notes:"",
+      age:"", sunExposure:"", watering:"", groundType:"",
+      photos: [], plantId: null, building:false, buildError:"", result:null
+    };
+  }
+  function wizardFieldMeta(){
+    return [
+      {key:"name", question:"What's this plant called?", kind:"text", required:true, placeholder:"e.g. Meyer lemon tree"},
+      {key:"type", question:"What type of plant is it?", kind:"type"},
+      {key:"spot", question:"Where in the garden is it?", kind:"spot"},
+      {key:"species", question:"Species or variety?", kind:"text", placeholder:"Optional — e.g. Citrus × meyeri"},
+      {key:"age", question:"About how old is it?", kind:"select", options:AGE_OPTIONS},
+      {key:"sunExposure", question:"How much sun does that spot get?", kind:"select", options:SUN_OPTIONS},
+      {key:"watering", question:"How do you water it?", kind:"select", options:WATERING_OPTIONS},
+      {key:"groundType", question:"What's the ground like there?", kind:"select", options:GROUND_OPTIONS},
+      {key:"notes", question:"Anything else worth noting?", kind:"textarea", placeholder:"Optional"}
+    ];
+  }
+  function wizardTotalSteps(){ return wizardFieldMeta().length + 3; } // fields + photos + review + result
+  function wizardProgress(step, total){
+    var pct = Math.round((Math.min(step,total-1)/(total-1))*100);
+    return el("div", {style:"margin-bottom:14px;"}, [
+      el("div", {style:"font-size:11.5px;color:var(--ink-faint);margin-bottom:4px;"}, ["Step " + (Math.min(step,total-1)+1) + " of " + total]),
+      el("div", {class:"grade-track"}, [el("div", {class:"grade-fill", style:"width:" + pct + "%;"})])
+    ]);
+  }
+
+  function plantWizardCard(wiz, opts){
+    var fields = wizardFieldMeta();
+    if (wiz.step < fields.length) return wizardFieldStep(wiz, fields[wiz.step], opts);
+    if (wiz.step === fields.length) return wizardPhotosStep(wiz, opts);
+    if (wiz.step === fields.length + 1) return wizardReviewStep(wiz, opts);
+    return wizardResultStep(wiz, opts);
+  }
+
+  function wizardFieldStep(wiz, field, opts){
+    var card = el("div", {class:"onboard-card card"});
+    card.appendChild(wizardProgress(wiz.step, wizardTotalSteps()));
+    card.appendChild(el("h2", {style:"font-size:18px;"}, [field.question]));
+
+    var input, spot;
+    if (field.kind === "text"){
+      input = el("input", {type:"text", placeholder:field.placeholder||"", value:wiz[field.key]||""});
+      card.appendChild(el("div", {class:"field"}, [input]));
+    } else if (field.kind === "textarea"){
+      input = el("textarea", {placeholder:field.placeholder||"", style:"min-height:60px;"});
+      input.value = wiz[field.key] || "";
+      card.appendChild(el("div", {class:"field"}, [input]));
+    } else if (field.kind === "type"){
+      input = el("select", {}, typeOptions(wiz.type));
+      card.appendChild(el("div", {class:"field"}, [input]));
+    } else if (field.kind === "spot"){
+      spot = spotPicker(wiz.spot);
+      card.appendChild(el("div", {class:"field"}, [spot.select, spot.customInput]));
+    } else if (field.kind === "select"){
+      input = simpleSelect(field.options, wiz[field.key], "Not sure / skip");
+      card.appendChild(el("div", {class:"field"}, [input]));
+    }
+
+    var formError = el("div", {class:"empty", style:"margin:2px 0;"});
+    card.appendChild(formError);
+
+    function readValue(){
+      if (field.kind === "spot") return spot.getValue();
+      return input.value.trim();
+    }
+
+    var row = el("div", {class:"row", style:"justify-content:space-between;margin-top:14px;"});
+    if (wiz.step > 0){
+      var backBtn = el("button", {class:"btn btn-ghost"}, ["← Back"]);
+      backBtn.addEventListener("click", function(){ wiz[field.key] = readValue(); wiz.step--; opts.rerender(); });
+      row.appendChild(backBtn);
+    } else {
+      row.appendChild(el("div", {}));
+    }
+    var nextBtn = el("button", {class:"btn btn-primary"}, ["Next →"]);
+    nextBtn.addEventListener("click", function(){
+      var val = readValue();
+      if (field.required && !val){ formError.textContent = "This one's required."; return; }
+      wiz[field.key] = val;
+      wiz.step++;
+      opts.rerender();
+    });
+    row.appendChild(nextBtn);
+    card.appendChild(row);
+    return card;
+  }
+
+  function wizardPhotosStep(wiz, opts){
+    var card = el("div", {class:"onboard-card card"});
+    card.appendChild(wizardProgress(wiz.step, wizardTotalSteps()));
+    card.appendChild(el("h2", {style:"font-size:18px;"}, ["Add a photo or two?"]));
+    card.appendChild(el("p", {class:"lead", style:"font-size:13px;"}, ["Optional — helps build a more accurate care card and lets me track size and health over time. Up to 3."]));
+
+    var thumbs = el("div", {style:"display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;"});
+    function renderThumbs(){
+      thumbs.innerHTML = "";
+      wiz.photos.forEach(function(dataUrl, i){
+        var wrap = el("div", {style:"position:relative;"});
+        wrap.appendChild(el("img", {src:dataUrl, style:"width:72px;height:72px;object-fit:cover;border-radius:8px;display:block;"}));
+        var rm = el("button", {class:"btn btn-ghost btn-sm", style:"position:absolute;top:-8px;right:-8px;padding:1px 6px;background:var(--surface);border-radius:50%;"}, ["✕"]);
+        rm.addEventListener("click", function(){ wiz.photos.splice(i,1); opts.rerender(); });
+        wrap.appendChild(rm);
+        thumbs.appendChild(wrap);
+      });
+    }
+    renderThumbs();
+    card.appendChild(thumbs);
+
+    if (wiz.photos.length < 3){
+      var pick = el("label", {class:"btn btn-sm"}, ["+ Add a photo"]);
+      var input = el("input", {type:"file", accept:"image/*", class:"sr-only"});
+      pick.appendChild(input);
+      input.addEventListener("change", async function(){
+        var file = input.files[0];
+        if (!file) return;
+        var dataUrl = await resizeImage(file);
+        wiz.photos.push(dataUrl);
+        opts.rerender();
+      });
+      card.appendChild(pick);
+    }
+
+    var row = el("div", {class:"row", style:"justify-content:space-between;margin-top:16px;"}, [
+      el("button", {class:"btn btn-ghost"}, ["← Back"]),
+      el("button", {class:"btn btn-primary"}, ["Next →"])
+    ]);
+    row.children[0].addEventListener("click", function(){ wiz.step--; opts.rerender(); });
+    row.children[1].addEventListener("click", function(){ wiz.step++; opts.rerender(); });
+    card.appendChild(row);
+    return card;
+  }
+
+  function wizardReviewRow(label, value){
+    return value ? el("div", {class:"row", style:"justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--line);font-size:13px;"}, [
+      el("span", {style:"color:var(--ink-faint);"}, [label]), el("span", {style:"font-weight:600;text-align:right;"}, [value])
+    ]) : null;
+  }
+
+  function wizardReviewStep(wiz, opts){
+    var card = el("div", {class:"onboard-card card"});
+    card.appendChild(wizardProgress(wiz.step, wizardTotalSteps()));
+    card.appendChild(el("h2", {style:"font-size:18px;"}, ["Ready to build " + (wiz.name||"this plant") + "'s card"]));
+    card.appendChild(el("p", {class:"lead", style:"font-size:13px;"}, ["Double-check what you've entered, then I'll put together its care guide."]));
+
+    var list = el("div", {style:"margin-bottom:12px;"});
+    [["Name",wiz.name],["Type",wiz.type],["Spot",wiz.spot],["Species",wiz.species],
+     ["Age",wiz.age],["Sun exposure",wiz.sunExposure],["Watering",wiz.watering],["Ground",wiz.groundType],
+     ["Notes",wiz.notes]].forEach(function(pair){
+      var row = wizardReviewRow(pair[0], pair[1]);
+      if (row) list.appendChild(row);
+    });
+    card.appendChild(list);
+    if (wiz.photos.length){
+      var pw = el("div", {style:"display:flex;gap:8px;margin-bottom:12px;"});
+      wiz.photos.forEach(function(dataUrl){ pw.appendChild(el("img", {src:dataUrl, style:"width:56px;height:56px;object-fit:cover;border-radius:8px;"})); });
+      card.appendChild(pw);
+    }
+
+    if (wiz.buildError) card.appendChild(el("div", {class:"empty", style:"margin-bottom:8px;"}, [wiz.buildError]));
+
+    var row = el("div", {class:"row", style:"justify-content:space-between;margin-top:6px;"});
+    var backBtn = el("button", {class:"btn btn-ghost"}, ["← Back"]);
+    backBtn.addEventListener("click", function(){ wiz.step--; opts.rerender(); });
+    var buildBtn = el("button", {class:"btn btn-primary"}, [wiz.building ? "Building…" : "Build my plant card →"]);
+    buildBtn.disabled = wiz.building;
+    buildBtn.addEventListener("click", async function(){
+      wiz.building = true; wiz.buildError = ""; opts.rerender();
+      try {
+        var created = wiz.plantId ? {id:wiz.plantId} : await api("/plants", {method:"POST", body:{
+          name: wiz.name, type: wiz.type||"other", spot: wiz.spot||"", species: wiz.species||"", notes: wiz.notes||""
+        }});
+        wiz.plantId = created.id;
+        var details = [];
+        if (wiz.age) details.push({key:"age", label:wiz.age});
+        if (wiz.sunExposure) details.push({key:"sunExposure", label:wiz.sunExposure});
+        if (wiz.watering) details.push({key:"watering", label:wiz.watering});
+        if (wiz.groundType) details.push({key:"groundType", label:wiz.groundType});
+        var built = await api("/plants/" + wiz.plantId + "/build-card", {method:"POST", body:{details:details, photos:wiz.photos}});
+        wiz.result = built;
+        wiz.building = false;
+        if (opts.onAdded) opts.onAdded();
+        wiz.step++;
+        opts.rerender();
+      } catch(e){
+        wiz.building = false;
+        wiz.buildError = wiz.plantId
+          ? "Saved, but couldn't build the care card just now — try again."
+          : "Couldn't save this plant — try again.";
+        opts.rerender();
+      }
+    });
+    row.appendChild(backBtn);
+    row.appendChild(buildBtn);
+    card.appendChild(row);
+    return card;
+  }
+
+  function wizardResultStep(wiz, opts){
+    var card = el("div", {class:"onboard-card card"});
+    var plant = wiz.result || {};
+    var ok = plant && plant.careProfile;
+    card.appendChild(el("h2", {style:"font-size:18px;"}, [ok ? (wiz.name + "'s card is ready") : (wiz.name + " is saved")]));
+    if (ok){
+      var cg = el("dl", {class:"care-grid", style:"margin-bottom:6px;"});
+      [["soil","Soil"],["sun","Sun"],["watering","Watering"],["pruning","Pruning"]].forEach(function(f){
+        if (plant.careProfile[f[0]]) cg.appendChild(el("div", {}, [el("dt",{},[f[1]]), el("dd",{},[plant.careProfile[f[0]]])]));
+      });
+      card.appendChild(cg);
+      if (plant.sizeInfo || plant.healthStatus === "needs_attention"){
+        card.appendChild(el("div", {class:"agent-note", style:"margin-top:8px;"}, [
+          (plant.sizeInfo ? plant.sizeInfo + ". " : "") + (plant.photos && plant.photos.length && plant.photos[plant.photos.length-1].summary || "")
+        ]));
+      }
+    } else {
+      card.appendChild(el("p", {class:"lead"}, ["Saved — I couldn't finish building the care card just now, but you can retry anytime from its Care guide tab."]));
+    }
+
+    var row = el("div", {class:"row", style:"justify-content:space-between;margin-top:16px;"});
+    var addAnotherBtn = el("button", {class:"btn btn-ghost"}, ["+ Add another plant"]);
+    addAnotherBtn.addEventListener("click", function(){
+      var fresh = createWizardState();
+      Object.keys(fresh).forEach(function(k){ wiz[k] = fresh[k]; });
+      opts.rerender();
+    });
+    var doneBtn = el("button", {class:"btn btn-primary"}, ["Done"]);
+    doneBtn.addEventListener("click", function(){ opts.onExit(); });
+    row.appendChild(addAnotherBtn);
+    row.appendChild(doneBtn);
+    card.appendChild(row);
+    return card;
+  }
+
+  // Dashboard entry point — same wizard, shown in a modal.
+  function openPlantWizard(){
+    var wiz = createWizardState();
+    function rerenderModal(){
+      showModal(function(container){
+        container.appendChild(el("div", {class:"modal-head"}, [
+          el("h3", {}, ["Add a plant"]),
+          el("button", {class:"modal-close", onclick:closeModal}, ["×"])
+        ]));
+        container.appendChild(plantWizardCard(wiz, {
+          rerender: rerenderModal,
+          onExit: async function(){ try { await loadGardenData(); } catch(e){} closeModal(); }
+        }));
+      });
+    }
+    rerenderModal();
   }
 
   // ---------------------------------------------------------------
@@ -562,20 +762,6 @@
     return r.result;
   }
 
-  // Creates a plant, then kicks off its species research in the background
-  // (fire-and-forget, like the original's un-awaited researchPlant() call).
-  // When research lands, the dashboard refreshes so the card flips to
-  // "Care guide ready" without waiting for the next poll.
-  async function createPlant(p){
-    var created = await api("/plants", {method:"POST", body:{
-      name: p.name, species: p.species||"", type: p.type||"other", spot: p.spot||"", notes: p.notes||""
-    }});
-    researchPlant(created.id).then(function(ok){
-      if (ok && state.settings && state.settings.onboarded) refreshLive();
-    });
-    return created;
-  }
-
   // Species-level research (care guide + yearly schedule). The server
   // carries forward completed (lastDone) schedule entries on a re-research.
   // Resolves true/false, never throws — same contract as the original.
@@ -607,7 +793,11 @@
   // ---------------------------------------------------------------
   var modalOpenFor = null;
 
-  function renderDashboard(){
+  // state.section drives which of the three app sections (Tasks/Library/
+  // Calendar) is showing; renderShell() rebuilds the whole shell (topbar +
+  // tab bar + the active section) every time it's called, same "full
+  // re-render on any state change" approach the rest of the app already uses.
+  function renderShell(){
     var app = document.getElementById("app");
     app.innerHTML = "";
     var shell = el("div", {class:"shell"});
@@ -616,26 +806,48 @@
       el("div", {class:"brand"}, [el("span", {class:"mark", html:icon("leaf")}), el("h1", {}, ["Garden Companion"])]),
       el("div", {class:"row", style:"align-items:center;gap:10px;"}, [
         el("div", {class:"date"}, [new Date().toLocaleDateString(undefined,{weekday:"long", month:"long", day:"numeric"})]),
-        el("button", {class:"btn btn-ghost btn-sm", onclick:openYearlyPlan}, ["Yearly plan"]),
         el("button", {class:"btn btn-ghost btn-sm", onclick:openSettings}, ["Settings"])
       ])
     ]));
 
-    shell.appendChild(weatherCard());
+    shell.appendChild(sectionTabBar());
 
-    shell.appendChild(tasksSection(thisWeekTasks()));
-
-    shell.appendChild(upcomingSection(upcomingTasks()));
-
-    shell.appendChild(plantsSection());
-
-    var doneRecent = state.tasks.filter(function(t){ return t.status === "done"; }).slice(0,6);
-    if (doneRecent.length){
-      shell.appendChild(doneSection(doneRecent));
-    }
+    if (state.section === "library") shell.appendChild(librarySection());
+    else if (state.section === "calendar") shell.appendChild(calendarSection());
+    else shell.appendChild(tasksHomeSection());
 
     app.appendChild(shell);
     document.getElementById("askFab").hidden = false;
+  }
+
+  function sectionTabBar(){
+    var tabs = [["tasks","Tasks","tasks"], ["library","Library","library"], ["calendar","Calendar","calendar"]];
+    var wrap = el("div", {class:"tab-bar"});
+    tabs.forEach(function(t){
+      var btn = el("button", {class:"tab-btn" + (state.section===t[0] ? " active" : "")}, [
+        el("span", {class:"icon", html:icon(t[2])}), t[1]
+      ]);
+      btn.addEventListener("click", function(){
+        if (state.section === t[0]) return;
+        state.section = t[0];
+        renderShell();
+        // Refresh in the background so switching tabs shows current data
+        // without blocking the tab switch itself on a network round trip.
+        loadGardenData().then(function(){ if (state.section === t[0]) renderShell(); }).catch(function(){});
+      });
+      wrap.appendChild(btn);
+    });
+    return wrap;
+  }
+
+  function tasksHomeSection(){
+    var wrap = el("div", {});
+    wrap.appendChild(weatherCard());
+    wrap.appendChild(tasksSection(thisWeekTasks()));
+    wrap.appendChild(upcomingSection(upcomingTasks()));
+    var doneRecent = state.tasks.filter(function(t){ return t.status === "done"; }).slice(0,6);
+    if (doneRecent.length) wrap.appendChild(doneSection(doneRecent));
+    return wrap;
   }
 
   function weatherCard(){
@@ -662,11 +874,11 @@
         body.push(el("div", {class:"alert chip chip-crit"}, [w.alert]));
       }
     }
-    var refreshBtn = el("button", {class:"btn btn-ghost btn-sm", title:"Check weather now", style:"margin-left:auto;flex:none;"}, ["⟳ Refresh"]);
+    var refreshBtn = el("button", {class:"btn btn-ghost btn-sm icon-btn", title:"Check weather now", "aria-label":"Refresh weather", style:"margin-left:auto;flex:none;"}, [el("span", {html:icon("refresh")})]);
     refreshBtn.addEventListener("click", async function(){
-      refreshBtn.disabled = true; refreshBtn.textContent = "Checking…";
+      refreshBtn.disabled = true; refreshBtn.classList.add("spinning");
       try { await refreshWeatherNow(); }
-      finally { refreshBtn.disabled = false; refreshBtn.textContent = "⟳ Refresh"; }
+      finally { refreshBtn.disabled = false; refreshBtn.classList.remove("spinning"); }
     });
     body.push(refreshBtn);
     return el("div", {class:"card weather", style:"margin-bottom:20px;"}, body);
@@ -876,15 +1088,23 @@
     return wrap;
   }
 
-  function plantsSection(){
+  function librarySection(){
     var sec = el("div", {class:"card"});
-    sec.appendChild(el("div", {class:"section-head"}, [
-      el("h2", {}, ["Your garden"]),
-      el("button", {class:"btn btn-sm", onclick:openAddPlant}, ["+ Add a plant"])
-    ]));
     if (state.plants.length === 0){
-      sec.appendChild(el("div", {class:"empty"}, ["No plants yet."]));
+      sec.appendChild(el("div", {class:"section-head"}, [el("h2", {}, ["Your library"])]));
+      var cta = el("div", {style:"text-align:center;padding:24px 12px;"}, [
+        el("div", {html:icon("leaf"), class:"icon-lg", style:"margin:0 auto 10px;"}),
+        el("p", {class:"lead", style:"margin-bottom:14px;"}, ["No plants yet — add your first one and I'll build a care guide for it."])
+      ]);
+      var ctaBtn = el("button", {class:"btn btn-primary"}, ["+ Start building your plant library"]);
+      ctaBtn.addEventListener("click", openPlantWizard);
+      cta.appendChild(ctaBtn);
+      sec.appendChild(cta);
     } else {
+      sec.appendChild(el("div", {class:"section-head"}, [
+        el("h2", {}, ["Your library"]),
+        el("button", {class:"btn btn-sm", onclick:openPlantWizard}, ["+ Add a plant"])
+      ]));
       var grid = el("div", {class:"plant-grid"});
       state.plants.forEach(function(p){ grid.appendChild(plantCard(p)); });
       sec.appendChild(grid);
@@ -955,21 +1175,11 @@
     });
   }
 
-  // ---- Yearly Plan: a real month/week calendar over the `tasks` collection. ----
+  // ---- Calendar section: Year/Month/Week views over the `tasks` collection. ----
   // Deliberately read-only for completion — tasks can be opened and reviewed
   // (comments/photo still allowed) but never marked done from here; that only
-  // happens from "This week" on the dashboard. Locked to the current year.
+  // happens from the Tasks section. Locked to the current year.
   var yearlyPlan = { mode:"month", anchor: isoDate(new Date().getFullYear(), new Date().getMonth()+1, 1) };
-
-  async function openYearlyPlan(){
-    await loadGardenData(); // always read fresh — don't trust whatever state happened to be drawn last
-    yearlyPlan = { mode:"month", anchor: isoDate(new Date().getFullYear(), new Date().getMonth()+1, 1) };
-    renderYearlyPlan();
-  }
-
-  function renderYearlyPlan(){
-    showModal(function(container){ buildYearlyPlanView(container); });
-  }
 
   function weekDatesFor(d){
     var start = new Date(d); start.setDate(start.getDate() - start.getDay());
@@ -1011,37 +1221,76 @@
     yearlyPlan.anchor = isoDate(d.getFullYear(), d.getMonth()+1, d.getDate());
   }
 
-  function buildYearlyPlanView(container){
-    container.appendChild(el("div", {class:"modal-head"}, [
-      el("h3", {}, ["Yearly care plan"]),
-      el("button", {class:"modal-close", onclick:closeModal}, ["×"])
-    ]));
+  function calendarSection(){
+    var container = el("div", {class:"card"});
+    container.appendChild(el("div", {class:"section-head"}, [el("h2", {}, ["Calendar"])]));
     if (state.plants.length === 0){
       container.appendChild(el("div", {class:"empty"}, ["Add a plant and its yearly schedule will show up here."]));
-      return;
+      return container;
     }
     var anyResearched = state.plants.some(function(p){ return p.researched; });
     if (!anyResearched){
       container.appendChild(el("div", {class:"empty", style:"margin-bottom:10px;"}, ["Still building schedules for your plants — check back shortly."]));
     }
 
+    var yearBtn = el("button", {class:"btn btn-sm" + (yearlyPlan.mode==="year" ? "" : " btn-ghost")}, ["Year"]);
     var monthBtn = el("button", {class:"btn btn-sm" + (yearlyPlan.mode==="month" ? "" : " btn-ghost")}, ["Month"]);
     var weekBtn = el("button", {class:"btn btn-sm" + (yearlyPlan.mode==="week" ? "" : " btn-ghost")}, ["Week"]);
-    monthBtn.addEventListener("click", function(){ yearlyPlan.mode = "month"; renderYearlyPlan(); });
-    weekBtn.addEventListener("click", function(){ yearlyPlan.mode = "week"; renderYearlyPlan(); });
-    var prevBtn = el("button", {class:"btn btn-ghost btn-sm"}, ["←"]);
-    var nextBtn = el("button", {class:"btn btn-ghost btn-sm"}, ["→"]);
-    prevBtn.addEventListener("click", function(){ shiftYearlyAnchor(-1); renderYearlyPlan(); });
-    nextBtn.addEventListener("click", function(){ shiftYearlyAnchor(1); renderYearlyPlan(); });
-    container.appendChild(el("div", {class:"row", style:"justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;"}, [
-      el("div", {class:"row", style:"gap:6px;"}, [monthBtn, weekBtn]),
-      el("div", {class:"row", style:"align-items:center;gap:8px;"}, [prevBtn, el("div", {style:"font-weight:600;font-size:14.5px;min-width:150px;text-align:center;"}, [yearlyPlanLabel()]), nextBtn])
-    ]));
+    yearBtn.addEventListener("click", function(){ yearlyPlan.mode = "year"; renderShell(); });
+    monthBtn.addEventListener("click", function(){ yearlyPlan.mode = "month"; renderShell(); });
+    weekBtn.addEventListener("click", function(){ yearlyPlan.mode = "week"; renderShell(); });
+    var header = el("div", {class:"row", style:"justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;"}, [
+      el("div", {class:"row", style:"gap:6px;"}, [yearBtn, monthBtn, weekBtn])
+    ]);
+    if (yearlyPlan.mode === "year"){
+      header.appendChild(el("div", {style:"font-weight:600;font-size:14.5px;"}, [String(new Date().getFullYear())]));
+    } else {
+      var prevBtn = el("button", {class:"btn btn-ghost btn-sm"}, ["←"]);
+      var nextBtn = el("button", {class:"btn btn-ghost btn-sm"}, ["→"]);
+      prevBtn.addEventListener("click", function(){ shiftYearlyAnchor(-1); renderShell(); });
+      nextBtn.addEventListener("click", function(){ shiftYearlyAnchor(1); renderShell(); });
+      header.appendChild(el("div", {class:"row", style:"align-items:center;gap:8px;"}, [prevBtn, el("div", {style:"font-weight:600;font-size:14.5px;min-width:150px;text-align:center;"}, [yearlyPlanLabel()]), nextBtn]));
+    }
+    container.appendChild(header);
     container.appendChild(plantLegend());
 
-    var anchorDate = new Date(yearlyPlan.anchor + "T00:00:00");
-    if (yearlyPlan.mode === "month") buildMonthGrid(container, anchorDate);
-    else buildWeekList(container, anchorDate);
+    if (yearlyPlan.mode === "year") buildYearGrid(container);
+    else {
+      var anchorDate = new Date(yearlyPlan.anchor + "T00:00:00");
+      if (yearlyPlan.mode === "month") buildMonthGrid(container, anchorDate);
+      else buildWeekList(container, anchorDate);
+    }
+    return container;
+  }
+
+  // Year view: one cell per month with an open-task count; clicking a month
+  // drills into Month view anchored there.
+  function buildYearGrid(container){
+    var year = new Date().getFullYear();
+    var map = tasksByDateMap();
+    var counts = new Array(12).fill(0);
+    Object.keys(map).forEach(function(dateStr){
+      if (dateStr.slice(0,4) === String(year)){
+        var m = parseInt(dateStr.slice(5,7), 10) - 1;
+        counts[m] += map[dateStr].filter(function(t){ return t.status !== "done"; }).length;
+      }
+    });
+    var grid = el("div", {style:"display:grid;grid-template-columns:repeat(3,1fr);gap:10px;"});
+    var thisMonth = new Date().getMonth();
+    MONTH_NAMES.forEach(function(name, i){
+      var isCurrent = i === thisMonth;
+      var cell = el("button", {style:"text-align:left;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--surface);cursor:pointer;" + (isCurrent ? "box-shadow:inset 0 0 0 2px var(--moss);" : "")}, [
+        el("div", {style:"font-weight:600;font-size:14px;margin-bottom:4px;"}, [name]),
+        el("div", {style:"font-size:12px;color:var(--ink-faint);"}, [counts[i] + (counts[i]===1 ? " open task" : " open tasks")])
+      ]);
+      cell.addEventListener("click", function(){
+        yearlyPlan.mode = "month";
+        yearlyPlan.anchor = isoDate(year, i+1, 1);
+        renderShell();
+      });
+      grid.appendChild(cell);
+    });
+    container.appendChild(grid);
   }
 
   function buildMonthGrid(container, anchor){
@@ -1117,56 +1366,7 @@
   }
 
   function openYearlyTaskDetail(taskId){
-    openTaskDetail(taskId, {allowComplete:false, onBack:renderYearlyPlan});
-  }
-
-  function openAddPlant(){
-    showModal(function(container){
-      container.appendChild(el("div", {class:"modal-head"}, [
-        el("h3", {}, ["Add to your garden"]),
-        el("button", {class:"modal-close", onclick:closeModal}, ["×"])
-      ]));
-
-      var nameInput = el("input", {type:"text", placeholder:"e.g. Fig tree"});
-      var typeSelect = el("select", {}, typeOptions("other"));
-      var spot = spotPicker("");
-      var speciesInput = el("input", {type:"text", placeholder:"Species or variety (optional)"});
-      var notesInput = el("textarea", {placeholder:"Notes (optional)", style:"min-height:50px;"});
-      var formError = el("div", {class:"empty"});
-      var addedList = el("div", {style:"margin-top:10px;"});
-
-      container.appendChild(el("div", {class:"field"}, [el("label",{},["Name"]), nameInput]));
-      container.appendChild(el("div", {class:"field"}, [el("label",{},["Type"]), typeSelect]));
-      container.appendChild(el("div", {class:"field"}, [el("label",{},["Spot in the garden"]), spot.select, spot.customInput]));
-      container.appendChild(el("div", {class:"field"}, [el("label",{},["Species or variety (optional)"]), speciesInput]));
-      container.appendChild(el("div", {class:"field"}, [el("label",{},["Notes (optional)"]), notesInput]));
-      container.appendChild(formError);
-
-      var addBtn = el("button", {class:"btn btn-primary btn-sm"}, ["+ Add plant"]);
-      addBtn.addEventListener("click", async function(){
-        var name = nameInput.value.trim();
-        if (!name){ formError.textContent = "Give it a name first."; return; }
-        formError.textContent = "";
-        addBtn.disabled = true; addBtn.textContent = "Adding…";
-        try {
-          await createPlant({name:name, type:typeSelect.value||"other", spot:spot.getValue(), species:speciesInput.value.trim(), notes:notesInput.value.trim()});
-          addedList.appendChild(el("span", {class:"chip chip-moss", style:"margin:0 4px 4px 0;display:inline-block;"}, [name + " added"]));
-          nameInput.value = ""; speciesInput.value = ""; notesInput.value = "";
-        } catch(e){
-          formError.textContent = "Couldn't add that plant — try again.";
-        }
-        addBtn.disabled = false; addBtn.textContent = "+ Add plant";
-      });
-      container.appendChild(addBtn);
-      container.appendChild(addedList);
-
-      var doneBtn = el("button", {class:"btn btn-sm btn-ghost", style:"margin-top:14px;display:block;"}, ["Done"]);
-      doneBtn.addEventListener("click", async function(){
-        try { await loadGardenData(); } catch(e){}
-        closeModal();
-      });
-      container.appendChild(doneBtn);
-    });
+    openTaskDetail(taskId, {allowComplete:false, onBack:function(){ state.section = "calendar"; closeModal(); }});
   }
 
   // Which tab is showing in the currently-open plant detail modal. Only one
@@ -1574,10 +1774,10 @@
   function closeModal(){
     document.getElementById("overlay").hidden = true;
     modalOpenFor = null;
-    // The dashboard behind the modal was frozen while it was open (live updates
+    // The section behind the modal was frozen while it was open (live updates
     // still landed in `state`, they just weren't drawn) — repaint now so the
     // knowledge bar, status chips and task list reflect whatever just happened.
-    renderDashboard();
+    renderShell();
   }
   document.getElementById("overlay").addEventListener("click", function(e){
     if (e.target.id === "overlay") closeModal();

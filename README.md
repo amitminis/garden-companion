@@ -13,9 +13,9 @@ public/            static frontend (index.html, css/, js/app.js)
 api/
   plants/index.js       GET (list), POST (create)
   plant-detail.js        GET/PATCH/DELETE a plant, plus its research/
-                          details/issue/photo sub-actions — consolidated
-                          into one Function (see "Function count" below);
-                          vercel.json rewrites route to it
+                          details/issue/photo/build-card sub-actions —
+                          consolidated into one Function (see "Function
+                          count" below); vercel.json rewrites route to it
   plant-extract.js        POST — onboarding/quick-add plant extraction
   tasks/index.js         GET (list), POST (create)
   task-detail.js          GET/PATCH a task, plus its photo sub-action —
@@ -34,6 +34,9 @@ lib/
   vision.js              photo analysis via the Anthropic Messages API
   plant-photo.js          shared photo-analysis pipeline
   issue-diagnosis.js       shared diagnosis -> status/task pipeline
+  handlers/plant-build-card.js  the "Add a plant" wizard's single AI call —
+                          care guide + (if photos given) size/health, in one
+                          request; see api/plant-detail.js's build-card action
   weather.js               Open-Meteo forecast -> friendly weather-card shape
   handlers/               the actual per-action logic for plant-detail.js /
                           task-detail.js (see "Function count" below)
