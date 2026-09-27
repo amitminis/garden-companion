@@ -2,14 +2,14 @@
 //
 // Ported from garden-companion.html's Ask panel (sendAsk + gardenContext).
 // The garden-context message is built here from the DB — never trusted from
-// the client. lib/sandbox-agent.js's runAgentPrompt takes one prompt string
-// (maxTurns:1), so the context + conversation are flattened into a single
-// transcript and the model is asked to reply as the assistant.
+// the client — and passed as the system prompt to lib/ai.js's chat(), with
+// the conversation passed as real user/assistant turns rather than
+// flattened into one string.
 //
 // Always 200: on failure returns the original's fallback text.
 
 const sql = require('../lib/db');
-const { runAgentPrompt } = require('../lib/sandbox-agent');
+const { chat } = require('../lib/ai');
 
 const FALLBACK = "Sorry, I couldn't answer that just now.";
 
@@ -38,14 +38,8 @@ module.exports = async function handler(req, res) {
       "You are the user's personal home gardening expert, familiar with their real garden. Garden location: " + loc +
       '. Plants: ' + plantList + '. Answer their questions specifically and practically, referencing their actual plants and conditions where relevant. Keep answers concise.';
 
-    const transcript = cleanTurns
-      .map((t) => (t.role === 'user' ? 'User: ' : 'Assistant: ') + t.content.trim())
-      .join('\n\n');
-    const prompt = context + '\n\nConversation so far:\n\n' + transcript + '\n\nRespond as the assistant to the latest message above. Reply with only your answer text — no "Assistant:" prefix.';
-
-    const text = await runAgentPrompt(prompt, { timeoutMs: 90_000 });
-    const answer = String(text || '').trim().replace(/^Assistant:\s*/i, '');
-    res.status(200).json({ text: answer || FALLBACK });
+    const text = await chat(context, cleanTurns, { timeoutMs: 90_000 });
+    res.status(200).json({ text: String(text || '').trim() || FALLBACK });
   } catch (e) {
     res.status(200).json({ text: FALLBACK });
   }

@@ -10,7 +10,7 @@
 // Never fails the request — returns [] on any error, since both callers
 // need to keep working even if extraction is unavailable.
 
-const { runAgentJson } = require('../lib/sandbox-agent');
+const { completeJson } = require('../lib/ai');
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -26,7 +26,7 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    const result = await runAgentJson(
+    const result = await completeJson(
       'A home gardener described their garden in their own words below. Extract every distinct plant, tree, bush or flower they mentioned as a JSON array. ' +
       'Each item: {"name": short common name, "species": your best guess at species/cultivar or "" if unclear, "type": one of "tree","bush","flower","vegetable","herb","other", "spot": where in the garden or "" if unspecified, "notes": any other detail they gave or ""}. ' +
       'Reply with only the JSON array, nothing else.\n\nGardener\'s description:\n' + text,

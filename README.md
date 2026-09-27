@@ -2,9 +2,9 @@
 
 The web-app slice of the architecture in the project's
 `garden-companion-iphone-app-architecture.md` doc: plain JS frontend,
-Vercel Functions API, Vercel Sandbox running the Claude Agent SDK,
-Neon Postgres, Vercel Cron. No native/iOS layer yet — that's Capacitor on
-top of this, later.
+Vercel Functions API, Neon Postgres, Vercel Cron, and the Anthropic
+Messages API called directly for every AI touchpoint (`lib/ai.js`). No
+native/iOS layer yet — that's Capacitor on top of this, later.
 
 ## What's here
 
@@ -30,8 +30,9 @@ lib/
   care-templates.js    ported from garden-companion.html unchanged
   dates.js             ported date/id helpers
   schedule.js           ported materializeScheduledTasksForYear()
-  sandbox-agent.js       runs the Agent SDK inside a Vercel Sandbox
-  vision.js              photo analysis via the Anthropic Messages API
+  ai.js                   every AI call in the app — direct Anthropic
+                          Messages API requests (text, JSON, multi-turn
+                          chat, optionally with photos as image blocks)
   plant-photo.js          shared photo-analysis pipeline
   issue-diagnosis.js       shared diagnosis -> status/task pipeline
   handlers/plant-build-card.js  the "Add a plant" wizard's single AI call —
@@ -75,18 +76,37 @@ Issues), get-to-know wizard, Report a problem, Ask panel, and photo
 analysis are all ported. Live `onSnapshot` updates are approximated with a
 45-second poll.
 
-AI touchpoints and where they run:
+Every AI touchpoint goes through `lib/ai.js` — one direct Anthropic Messages
+API caller for the whole app, all requiring `ANTHROPIC_API_KEY`:
 
-| Endpoint | Runs via |
+| Endpoint | Calls |
 |---|---|
-| `POST /api/plants/:id/research` | Sandbox + Agent SDK |
-| `POST /api/plant-extract` (onboarding + quick-add) | Sandbox + Agent SDK |
-| `POST /api/plants/:id/details` (get-to-know answer normalization) | Sandbox + Agent SDK |
-| `POST /api/ask` | Sandbox + Agent SDK |
-| `POST /api/plants/:id/issue` (text only) | Sandbox + Agent SDK |
-| `POST /api/plants/:id/photo`, `POST /api/plants/:id/issue` (with photo), `POST /api/tasks/:id/photo` | Anthropic Messages API directly (`lib/vision.js`), **needs `ANTHROPIC_API_KEY`** |
+| `POST /api/plants/:id/research` | `completeJson()` |
+| `POST /api/plants/:id/build-card` (the "Add a plant" wizard) | `completeJson()`, with photos if given |
+| `POST /api/plant-extract` (onboarding + quick-add) | `completeJson()` |
+| `POST /api/plants/:id/details` (get-to-know answer normalization) | `complete()` |
+| `POST /api/ask` | `chat()` — real multi-turn, not a flattened prompt |
+| `POST /api/plants/:id/issue` | `completeJson()`, with the photo if one was attached |
+| `POST /api/plants/:id/photo`, `POST /api/tasks/:id/photo` | `completeJson()` / `complete()` with a photo |
+| `GET /api/cron/daily` (weather-alert reasoning) | `completeJson()` |
 
-Without `ANTHROPIC_API_KEY`, photos are still saved, just not analyzed.
+Without `ANTHROPIC_API_KEY`, every one of these degrades gracefully instead
+of failing the request: photos are still saved without analysis, plants
+stay "unresearched," Ask returns a fallback message, and so on — see each
+handler's catch block, which pattern-matches on `AI_UNAVAILABLE`.
+
+This app previously ran text-only touchpoints through a Vercel Sandbox
+running the Claude Agent SDK (`lib/sandbox-agent.js`, now removed) so they
+could authenticate with a personal Claude subscription
+(`CLAUDE_CODE_OAUTH_TOKEN`) instead of a metered API key. That only ever
+made sense for a single personal user — a subscription token authenticates
+as one person, not as a product serving other people — and none of the
+touchpoints used the Agent SDK's actual point (tool use, multi-step
+agency): every one was a single prompt in, one reply out. Calling the
+Messages API directly is faster (no sandbox cold start), removes a whole
+dependency, and puts the app on the right footing for real usage: metered
+billing under one API key, with normal cost controls (see "Known gaps"
+below).
 
 ## Setup
 
@@ -94,12 +114,10 @@ Without `ANTHROPIC_API_KEY`, photos are still saved, just not analyzed.
    (Marketplace tab) to a project, which sets `DATABASE_URL` automatically.
    Then run `schema.sql` against it once (Neon's SQL editor, or `psql
    $DATABASE_URL -f schema.sql`).
-2. **Claude auth**: either run `claude setup-token` locally and add the
-   result as `CLAUDE_CODE_OAUTH_TOKEN`, or generate a key at
-   console.anthropic.com and add it as `ANTHROPIC_API_KEY` (Project
-   Settings → Environment Variables). Either is passed into each Sandbox
-   by `lib/sandbox-agent.js` — OAuth token wins if both are set.
-   `ANTHROPIC_API_KEY` is also required for photo analysis (`lib/vision.js`).
+2. **Claude auth**: generate a key at console.anthropic.com and add it as
+   `ANTHROPIC_API_KEY` (Project Settings → Environment Variables). Required
+   for every AI touchpoint (`lib/ai.js`) — without it they degrade
+   gracefully rather than fail (see above), but nothing gets AI-generated.
 3. **Cron security** (optional but recommended): set a `CRON_SECRET` env
    var to any random string — Vercel automatically sends it as a bearer
    token on cron-triggered requests, and `api/cron/daily.js` checks it.
@@ -133,5 +151,11 @@ Without `ANTHROPIC_API_KEY`, photos are still saved, just not analyzed.
 - **One-time data migration** from the current Artifact (`read_db` dump →
   import into this schema) hasn't been done — this is a fresh, empty
   database until that happens.
+- **No AI cost controls yet.** Every touchpoint in `lib/ai.js` calls the
+  Messages API with no rate limiting, no per-user budget, and no usage
+  tracking — fine for a single-user testing deployment, not for a real
+  product with other people's traffic on your API key. Before that: a
+  spend alert in the Anthropic console at minimum, and likely per-user rate
+  limits once there's real auth (see the first gap above).
 
 <!-- verifying git-triggered deploy -->

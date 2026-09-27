@@ -2,12 +2,11 @@
   "name": "garden-companion-webapp",
   "version": "0.1.0",
   "private": true,
-  "description": "Garden Companion — web app (Vercel Functions + Sandbox + Neon), plain JS frontend.",
+  "description": "Garden Companion — web app (Vercel Functions + Neon + Anthropic Messages API), plain JS frontend.",
   "scripts": {
     "dev": "vercel dev"
   },
   "dependencies": {
-    "@neondatabase/serverless": "^1.1.0",
-    "@vercel/sandbox": "^3.3.0"
+    "@neondatabase/serverless": "^1.1.0"
   }
 }

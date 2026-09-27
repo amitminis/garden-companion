@@ -15,7 +15,7 @@
 // triggered by a random request to a guessable URL.
 
 const sql = require('../../lib/db');
-const { runAgentPrompt } = require('../../lib/sandbox-agent');
+const { completeJson } = require('../../lib/ai');
 const { todayISO } = require('../../lib/dates');
 const { friendlyWeather } = require('../../lib/weather');
 const { jsonParam } = require('../../lib/mappers');
@@ -74,8 +74,7 @@ module.exports = async function handler(req, res) {
 
       let decision;
       try {
-        const text = await runAgentPrompt(prompt, { timeoutMs: 60_000 });
-        decision = JSON.parse(text.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, ''));
+        decision = await completeJson(prompt, { timeoutMs: 60_000 });
       } catch (e) {
         summary.errors.push('weather-alert reasoning failed: ' + String(e.message || e));
         decision = null;
