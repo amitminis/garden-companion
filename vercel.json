@@ -1,0 +1,14 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/daily",
+      "schedule": "0 13 * * *"
+    }
+  ],
+  "rewrites": [
+    { "source": "/api/plants/:id/:action", "destination": "/api/plant-detail?id=:id&action=:action" },
+    { "source": "/api/plants/:id", "destination": "/api/plant-detail?id=:id" },
+    { "source": "/api/tasks/:id/:action", "destination": "/api/task-detail?id=:id&action=:action" },
+    { "source": "/api/tasks/:id", "destination": "/api/task-detail?id=:id" }
+  ]
+}

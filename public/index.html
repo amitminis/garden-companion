@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Garden Companion</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Work+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div id="boot" class="onboard-wrap"><div class="onboard-card" style="text-align:center;color:var(--ink-faint);font-size:13.5px;">Opening the garden…</div></div>
+<div id="app" hidden></div>
+
+<div class="overlay" id="overlay" hidden>
+  <div class="modal" id="modalContent"></div>
+</div>
+
+<button class="ask-fab" id="askFab" hidden>
+  <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2c-4 0-7 3-7 7 0 4 3 5 3 8 0 1 1 2 2 2h4c1 0 2-1 2-2 0-3 3-4 3-8 0-4-3-7-7-7z"/><path d="M9 21h6M10 18h4"/></svg>
+  Ask your gardener
+</button>
+<div class="ask-panel" id="askPanel" hidden>
+  <div class="ask-head"><strong>Ask your gardener</strong><button class="modal-close" id="askClose" aria-label="Close">&times;</button></div>
+  <div class="ask-body" id="askBody"></div>
+  <div class="ask-foot">
+    <textarea id="askInput" placeholder="How's my tomato looking this week?"></textarea>
+    <button class="btn btn-primary btn-sm" id="askSend">Send</button>
+  </div>
+</div>
+
+<script src="/js/app.js"></script>
+</body>
+</html>
