@@ -146,7 +146,15 @@
       refresh:'<path d="M20 11A8 8 0 0 0 6.3 6.3L4 8.6"/><path d="M4 4v4.6h4.6"/><path d="M4 13a8 8 0 0 0 13.7 4.7l2.3-2.3"/><path d="M20 20v-4.6h-4.6"/>',
       library:'<rect x="4" y="4" width="7" height="16" rx="1"/><rect x="13" y="4" width="7" height="16" rx="1"/>',
       calendar:'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
-      tasks:'<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/>'
+      tasks:'<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/>',
+      camera:'<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
+      bug:'<ellipse cx="12" cy="14" rx="5" ry="6"/><path d="M12 8v12M7 11H3M7 16H3M17 11h4M17 16h4M9 6L7 3M15 6l2-3"/>',
+      seedling:'<path d="M12 21v-9"/><path d="M12 12c0-4-3-6-7-6 0 4 3 6 7 6z"/><path d="M12 10c0-3 2-6 7-6 0 4-3 6-7 6z"/>',
+      basket:'<path d="M3 10h18l-2 10H5z"/><path d="M8 10l3-6M16 10l-3-6"/>',
+      check:'<path d="M5 12.5l4.5 4.5L19 7"/>',
+      search:'<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
+      moon:'<path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/>',
+      gear:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>'
     };
     return '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+(paths[name]||paths.leaf)+'</svg>';
   }
@@ -155,6 +163,99 @@
     if (/rain|storm|shower/.test(text)) return "rain";
     if (/cloud|overcast/.test(text)) return "cloud";
     return "sun";
+  }
+
+  // What kind of job a task is, guessed from its wording — drives the row
+  // icon, the library card's "next care" line and the weekly summary.
+  var TASK_CATEGORIES = [
+    {key:"water",   icon:"drop",     emoji:"💧", verb:"watered",      re:/water|irrigat|soak|drip/},
+    {key:"prune",   icon:"scissors", emoji:"✂️", verb:"pruned",       re:/prun|trim|deadhead|cut back|pinch/},
+    {key:"harvest", icon:"basket",   emoji:"🧺", verb:"harvested",    re:/harvest|pick |collect/},
+    {key:"photo",   icon:"camera",   emoji:"📷", verb:"took photos",  re:/photo|picture|check-in|checkin/},
+    {key:"treat",   icon:"bug",      emoji:"🐛", verb:"treated pests & problems", re:/pest|aphid|bug|spray|fung|mildew|yellow|disease|rot|slug/},
+    {key:"plant",   icon:"seedling", emoji:"🌱", verb:"planted & sowed", re:/sow|seed|plant |bulb|transplant|pot up|repot/},
+    {key:"feed",    icon:"leaf",     emoji:"🍃", verb:"fed & mulched", re:/fertili|feed|compost|mulch|manure/}
+  ];
+  var OTHER_CATEGORY = {key:"other", icon:"leaf", emoji:"🍃", verb:"did other jobs"};
+  function taskCategory(t){
+    var text = " " + (t.title || "").toLowerCase() + " ";
+    for (var i=0;i<TASK_CATEGORIES.length;i++){ if (TASK_CATEGORIES[i].re.test(text)) return TASK_CATEGORIES[i]; }
+    if (t.kind === "issue") return TASK_CATEGORIES[4];
+    return OTHER_CATEGORY;
+  }
+
+  var TYPE_EMOJI = {tree:"🌳", bush:"🪴", flower:"🌸", vegetable:"🥕", herb:"🌿", other:"🌱"};
+  function typeEmoji(type){ return TYPE_EMOJI[type] || TYPE_EMOJI.other; }
+
+  // Knowledge score -> a friendlier growth "level" (same thresholds as
+  // gradeLabelFor).
+  function plantLevel(score){
+    if (score >= 80) return {emoji:"🌸", name:"Bloom"};
+    if (score >= 50) return {emoji:"🌿", name:"Sprout"};
+    return {emoji:"🌱", name:"Seedling"};
+  }
+
+  // Whole days from today to an ISO date (negative = past).
+  function daysFromToday(iso){
+    var a = new Date(todayISO() + "T00:00:00"), b = new Date(iso + "T00:00:00");
+    return Math.round((b - a) / 86400000);
+  }
+  function relativeDay(iso){
+    if (!iso) return "";
+    var n = daysFromToday(iso);
+    if (n < -1) return Math.abs(n) + " days overdue";
+    if (n === -1) return "yesterday";
+    if (n === 0) return "today";
+    if (n === 1) return "tomorrow";
+    if (n < 7) return "in " + n + " days";
+    return fmtDate(iso);
+  }
+
+  // The next open task for a plant (overdue ones first), or null.
+  function nextTaskFor(plantId){
+    var open = state.tasks.filter(function(t){ return t.plantId === plantId && t.status !== "done" && t.dueDate; });
+    open.sort(function(a,b){ return a.dueDate.localeCompare(b.dueDate); });
+    return open[0] || null;
+  }
+
+  function isTouch(){ return window.matchMedia && window.matchMedia("(pointer:coarse)").matches; }
+  function buzz(ms){ try { if (navigator.vibrate) navigator.vibrate(ms || 12); } catch(e){} }
+
+  // Per-device convenience storage (dismissed tips, library view). Never
+  // required for correctness — every read/write is guarded.
+  function localGet(key, fallback){
+    try { var v = localStorage.getItem(key); return v === null ? fallback : JSON.parse(v); } catch(e){ return fallback; }
+  }
+  function localSet(key, value){ try { localStorage.setItem(key, JSON.stringify(value)); } catch(e){} }
+
+  var toastTimer = null;
+  function showToast(text, action, ms){
+    var t = document.getElementById("toast");
+    t.innerHTML = "";
+    t.appendChild(el("span", {}, [text]));
+    if (action){
+      var b = el("button", {}, [action.label]);
+      b.addEventListener("click", function(){ t.hidden = true; action.fn(); });
+      t.appendChild(b);
+    }
+    t.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ t.hidden = true; }, ms || 4500);
+  }
+
+  // A little burst of leaves from wherever something was completed.
+  function leafBurst(fromEl){
+    if (!fromEl || !fromEl.getBoundingClientRect) return;
+    var r = fromEl.getBoundingClientRect();
+    var x = r.left + Math.min(r.width, 60) / 2, y = r.top + r.height / 2;
+    var leaves = ["🍃","🌿","✨","🍃","🌱","🍀","✨"];
+    leaves.forEach(function(leaf, i){
+      var a = (Math.PI * 2 * i) / leaves.length + Math.random() * 0.6;
+      var dist = 40 + Math.random() * 50;
+      var span = el("span", {class:"leaf-burst", style:"left:" + x + "px;top:" + y + "px;--dx:" + Math.round(Math.cos(a) * dist) + "px;--dy:" + Math.round(Math.sin(a) * dist - 20) + "px;--rot:" + Math.round(Math.random() * 360 - 180) + "deg;"}, [leaf]);
+      document.body.appendChild(span);
+      setTimeout(function(){ span.remove(); }, 900);
+    });
   }
 
   async function boot(){
@@ -192,7 +293,7 @@
       var w = await api("/weather-refresh", {method:"POST"});
       if (w && !w.error){
         state.weather = w;
-        if (!modalOpenFor) renderShell();
+        if (!modalOpenFor && !userIsBusy()) renderShell();
       }
     } catch(e){ /* silent — the cached weather card stays as-is */ }
     weatherRefreshing = false;
@@ -220,7 +321,7 @@
     livePolling = true;
     try {
       await loadGardenData();
-      if (!modalOpenFor) renderShell();
+      if (!modalOpenFor && !userIsBusy()) renderShell();
     } catch(e){ /* transient — try again on the next tick */ }
     livePolling = false;
   }
@@ -799,15 +900,18 @@
   // re-render on any state change" approach the rest of the app already uses.
   function renderShell(){
     var app = document.getElementById("app");
+    // Horizontal scrollers (garden row, tips, library shelves) keep their
+    // position across the full re-render, so the 45-second live refresh
+    // doesn't yank a row back to the start mid-browse.
+    var keptScroll = {};
+    app.querySelectorAll("[data-keep-scroll]").forEach(function(n){ keptScroll[n.getAttribute("data-keep-scroll")] = n.scrollLeft; });
     app.innerHTML = "";
     var shell = el("div", {class:"shell"});
 
+    var gearBtn = el("button", {class:"btn btn-ghost icon-btn gear-btn", title:"Settings", "aria-label":"Settings", onclick:openSettings}, [el("span", {html:icon("gear")})]);
     shell.appendChild(el("div", {class:"topbar"}, [
       el("div", {class:"brand"}, [el("span", {class:"mark", html:icon("leaf")}), el("h1", {}, ["Garden Companion"])]),
-      el("div", {class:"row", style:"align-items:center;gap:10px;"}, [
-        el("div", {class:"date"}, [new Date().toLocaleDateString(undefined,{weekday:"long", month:"long", day:"numeric"})]),
-        el("button", {class:"btn btn-ghost btn-sm", onclick:openSettings}, ["Settings"])
-      ])
+      gearBtn
     ]));
 
     shell.appendChild(sectionTabBar());
@@ -817,23 +921,37 @@
     else shell.appendChild(tasksHomeSection());
 
     app.appendChild(shell);
+    app.querySelectorAll("[data-keep-scroll]").forEach(function(n){
+      var k = n.getAttribute("data-keep-scroll");
+      if (keptScroll[k]) n.scrollLeft = keptScroll[k];
+    });
     document.getElementById("askFab").hidden = false;
+  }
+
+  // True while the user is in the middle of something a background
+  // re-render would wreck: typing in a field, or dragging a task row.
+  var swipeActive = false;
+  function userIsBusy(){
+    if (swipeActive) return true;
+    var a = document.activeElement;
+    return !!(a && document.getElementById("app").contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName));
   }
 
   function sectionTabBar(){
     var tabs = [["tasks","Tasks","tasks"], ["library","Library","library"], ["calendar","Calendar","calendar"]];
-    var wrap = el("div", {class:"tab-bar"});
+    var wrap = el("nav", {class:"tab-bar", "aria-label":"Sections"});
     tabs.forEach(function(t){
-      var btn = el("button", {class:"tab-btn" + (state.section===t[0] ? " active" : "")}, [
+      var btn = el("button", {class:"tab-btn" + (state.section===t[0] ? " active" : ""), "aria-current": state.section===t[0] ? "page" : null}, [
         el("span", {class:"icon", html:icon(t[2])}), t[1]
       ]);
       btn.addEventListener("click", function(){
-        if (state.section === t[0]) return;
+        if (state.section === t[0]) { window.scrollTo({top:0, behavior:"smooth"}); return; }
         state.section = t[0];
         renderShell();
+        window.scrollTo(0, 0);
         // Refresh in the background so switching tabs shows current data
         // without blocking the tab switch itself on a network round trip.
-        loadGardenData().then(function(){ if (state.section === t[0]) renderShell(); }).catch(function(){});
+        loadGardenData().then(function(){ if (state.section === t[0] && !modalOpenFor && !userIsBusy()) renderShell(); }).catch(function(){});
       });
       wrap.appendChild(btn);
     });
@@ -842,46 +960,218 @@
 
   function tasksHomeSection(){
     var wrap = el("div", {});
-    wrap.appendChild(weatherCard());
+    wrap.appendChild(heroCard());
+    var garden = gardenRow();
+    if (garden) wrap.appendChild(garden);
+    var tips = tipsSection();
+    if (tips) wrap.appendChild(tips);
     wrap.appendChild(tasksSection(thisWeekTasks()));
     wrap.appendChild(upcomingSection(upcomingTasks()));
-    var doneRecent = state.tasks.filter(function(t){ return t.status === "done"; }).slice(0,6);
+    var doneRecent = state.tasks.filter(function(t){ return t.status === "done"; })
+      .sort(function(a,b){ return String(b.completedAt||"").localeCompare(String(a.completedAt||"")); }).slice(0,6);
     if (doneRecent.length) wrap.appendChild(doneSection(doneRecent));
     return wrap;
   }
 
-  function weatherCard(){
+  // ---- Hero: greeting, what today needs, the week's progress ring, and
+  // the weather (with a plain-language "so what" line). Its background
+  // follows the sky: sunny / cloudy / rainy / night. ----
+  function weekProgress(){
+    var week = weekDatesFor(new Date());
+    var from = isoDate(week[0].getFullYear(), week[0].getMonth()+1, week[0].getDate());
+    var to = isoDate(week[6].getFullYear(), week[6].getMonth()+1, week[6].getDate());
+    var inWeek = state.tasks.filter(function(t){ return t.dueDate && t.dueDate >= from && t.dueDate <= to; });
+    return {done: inWeek.filter(function(t){ return t.status === "done"; }).length, total: inWeek.length};
+  }
+  function progressRing(done, total){
+    var r = 30, c = 2 * Math.PI * r, frac = total ? done / total : 0;
+    var ring = el("div", {class:"ring", title: done + " of " + total + " tasks done this week", role:"img", "aria-label": done + " of " + total + " tasks done this week"});
+    ring.innerHTML = '<svg viewBox="0 0 72 72"><circle class="ring-track" cx="36" cy="36" r="' + r + '" fill="none" stroke-width="7"/>' +
+      '<circle class="ring-fill" cx="36" cy="36" r="' + r + '" fill="none" stroke-width="7" stroke-linecap="round" stroke-dasharray="' + c.toFixed(1) + '" stroke-dashoffset="' + (c * (1 - frac)).toFixed(1) + '"/></svg>';
+    ring.appendChild(el("div", {class:"ring-label"}, [el("b", {}, [done + "/" + total]), el("span", {}, ["done"])]));
+    return ring;
+  }
+  function weatherAdvice(w){
+    if (!w) return null;
+    var hi = parseInt((String(w.tempLabel || "").match(/-?\d+/) || [])[0], 10);
+    var rain = parseInt((String(w.forecast || "").match(/(\d+)% chance of rain/) || [])[1], 10);
+    if (rain >= 50) return ["🌧️", "Rain likely — you can probably skip watering today."];
+    if (hi >= 33) return ["🥵", "A hot one — water early morning or in the evening, not midday."];
+    if (hi <= 4) return ["🧣", "Chilly — keep an eye on tender plants tonight."];
+    if (/breezy/i.test(w.forecast || "")) return ["💨", "Breezy — worth checking stakes on tall plants."];
+    return ["🌿", "Good weather to get out in the garden."];
+  }
+  function heroCard(){
+    var now = new Date(), hour = now.getHours();
+    var greet = hour < 5 ? "Good night" : hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
     var w = state.weather;
-    var body;
-    if (!w){
-      body = [
-        el("div", {html:icon("sun"), class:"icon-lg"}),
-        el("div", {}, [
-          el("div", {class:"desc"}, ["Weather check-in hasn't run yet"]),
-          el("div", {class:"loc"}, ["Your first daily check-in will fetch conditions for " + ((state.settings.location||{}).label || "your garden")])
-        ])
-      ];
+    var sky = weatherIconFor(w && (w.summary || w.forecast));
+    var night = hour >= 19 || hour < 6;
+    var theme = sky === "rain" ? "hero-rain" : sky === "cloud" ? "hero-cloud" : (night ? "hero-night" : "hero-sun");
+
+    var today = todayISO();
+    var open = state.tasks.filter(function(t){ return t.status !== "done" && t.dueDate; });
+    var overdue = open.filter(function(t){ return t.dueDate < today; }).length;
+    var dueToday = open.filter(function(t){ return t.dueDate === today; }).length;
+    var laterThisWeek = open.filter(function(t){ var n = daysFromToday(t.dueDate); return n > 0 && n < 7; }).length;
+    var needNow = overdue + dueToday;
+    var sub;
+    if (needNow > 0){
+      sub = el("div", {class:"hero-sub"}, ["Your garden needs ", el("strong", {}, [needNow + (needNow === 1 ? " thing" : " things")]), " today" + (overdue ? " (" + overdue + " to catch up on)." : ".")]);
+    } else if (laterThisWeek > 0){
+      sub = el("div", {class:"hero-sub"}, ["Nothing due today — " + laterThisWeek + " coming up later this week."]);
     } else {
-      body = [
-        el("div", {html:icon(weatherIconFor(w.summary || w.forecast)), class:"icon-lg"}),
-        el("div", {}, [
-          el("div", {class:"temp"}, [w.tempLabel || w.summary || "—"]),
-          el("div", {class:"desc"}, [w.forecast || w.summary || ""]),
-          el("div", {class:"loc"}, [(w.locationLabel||"") + " · updated " + fmtDate(w.fetchedAt)])
-        ])
-      ];
-      if (w.alert){
-        body.push(el("div", {class:"alert chip chip-crit"}, [w.alert]));
-      }
+      sub = el("div", {class:"hero-sub"}, ["Nothing due — go enjoy your garden 🌿"]);
     }
-    var refreshBtn = el("button", {class:"btn btn-ghost btn-sm icon-btn", title:"Check weather now", "aria-label":"Refresh weather", style:"margin-left:auto;flex:none;"}, [el("span", {html:icon("refresh")})]);
+
+    var prog = weekProgress();
+    var top = el("div", {class:"hero-top"}, [
+      el("div", {}, [
+        el("div", {class:"hero-date"}, [now.toLocaleDateString(undefined, {weekday:"long", month:"long", day:"numeric"})]),
+        el("h2", {}, [greet]),
+        sub
+      ]),
+      prog.total ? progressRing(prog.done, prog.total) : null
+    ]);
+    var hero = el("section", {class:"hero " + theme}, [top]);
+
+    var refreshBtn = el("button", {class:"btn btn-ghost btn-sm icon-btn", title:"Check weather now", "aria-label":"Refresh weather", style:"flex:none;"}, [el("span", {html:icon("refresh")})]);
     refreshBtn.addEventListener("click", async function(){
       refreshBtn.disabled = true; refreshBtn.classList.add("spinning");
       try { await refreshWeatherNow(); }
       finally { refreshBtn.disabled = false; refreshBtn.classList.remove("spinning"); }
     });
-    body.push(refreshBtn);
-    return el("div", {class:"card weather", style:"margin-bottom:20px;"}, body);
+    var wxIcon = (night && sky === "sun") ? "moon" : sky;
+    var wxText = w
+      ? el("div", {class:"wx-text"}, [
+          el("div", {}, [el("span", {class:"temp"}, [w.tempLabel || w.summary || "—"]), " ", el("span", {class:"desc"}, [w.forecast || ""])]),
+          el("div", {class:"loc"}, [(w.locationLabel || "") + (w.fetchedAt ? " · updated " + fmtDate(w.fetchedAt) : "")])
+        ])
+      : el("div", {class:"wx-text"}, [
+          el("div", {class:"desc"}, ["Weather check-in hasn't run yet"]),
+          el("div", {class:"loc"}, ["Conditions for " + ((state.settings.location||{}).label || "your garden") + " will show here."])
+        ]);
+    hero.appendChild(el("div", {class:"hero-weather"}, [el("span", {class:"icon-lg", html:icon(wxIcon)}), wxText, refreshBtn]));
+    if (w && w.alert) hero.appendChild(el("div", {class:"hero-alert chip chip-crit"}, ["⚠︎ " + w.alert]));
+    var advice = weatherAdvice(w);
+    if (advice) hero.appendChild(el("div", {class:"hero-advice"}, [el("span", {}, [advice[0]]), el("span", {}, [advice[1]])]));
+    return hero;
+  }
+
+  // ---- "Your garden": a row of plant avatars, the ones needing attention
+  // first (with a pulsing ring). Tap one to open it. ----
+  function plantAvatar(p){
+    var lastPhoto = (p.photos && p.photos.length) ? p.photos[p.photos.length-1] : null;
+    var color = plantColorFor(p.id);
+    var attn = p.healthStatus === "needs_attention";
+    var av = el("span", {class:"avatar" + (attn ? " attn" : ""), style:"--av-bg:color-mix(in srgb, " + color + " 28%, var(--surface));"},
+      [lastPhoto ? el("img", {src:lastPhoto.dataUrl, alt:""}) : typeEmoji(p.type)]);
+    var btn = el("button", {class:"avatar-btn", "aria-label": p.name + (attn ? " — needs attention" : "")}, [av, el("span", {class:"avatar-name"}, [p.name])]);
+    btn.addEventListener("click", function(){ openPlantDetail(p.id); });
+    return btn;
+  }
+  function gardenRow(){
+    if (state.plants.length === 0){
+      var cta = el("div", {class:"card empty-fun", style:"margin-bottom:18px;"}, [
+        el("span", {class:"big"}, ["🌱"]),
+        el("div", {style:"margin-bottom:12px;"}, ["Your garden is empty — add your first plant and I'll build its care guide and schedule."])
+      ]);
+      var b = el("button", {class:"btn btn-primary"}, ["+ Add your first plant"]);
+      b.addEventListener("click", openPlantWizard);
+      cta.appendChild(b);
+      return cta;
+    }
+    var plants = state.plants.slice().sort(function(a,b){
+      return (b.healthStatus === "needs_attention" ? 1 : 0) - (a.healthStatus === "needs_attention" ? 1 : 0);
+    });
+    var attnCount = plants.filter(function(p){ return p.healthStatus === "needs_attention"; }).length;
+    var row = el("div", {class:"hscroll", "data-keep-scroll":"garden-row"});
+    plants.forEach(function(p){ row.appendChild(plantAvatar(p)); });
+    var add = el("button", {class:"avatar-btn", "aria-label":"Add a plant"}, [el("span", {class:"avatar add"}, ["+"]), el("span", {class:"avatar-name"}, ["Add"])]);
+    add.addEventListener("click", openPlantWizard);
+    row.appendChild(add);
+    return el("section", {}, [
+      el("div", {class:"section-title"}, [el("h2", {}, ["Your garden"]), el("span", {class:"hint"}, [attnCount ? attnCount + " need" + (attnCount === 1 ? "s" : "") + " attention" : "all looking good"])]),
+      row
+    ]);
+  }
+
+  // ---- Garden tips: seasonal / weather cards (public/js/tips.js), each
+  // with a one-tap "Add as task". A tip already added this year shows as
+  // added (matched by title against existing tip tasks); "Not now" hides it
+  // on this device until next year (weather tips: until tomorrow). ----
+  var TIP_DISMISS_KEY = "gc.dismissedTips";
+  function tipDismissKey(tip){ return tip.weather ? todayISO() : String(new Date().getFullYear()); }
+  function tipAddedTask(tip){
+    var year = new Date().getFullYear(), today = todayISO();
+    return state.tasks.find(function(t){
+      if (t.kind !== "tip" || t.title !== tip.task.title) return false;
+      return tip.weather ? (t.createdAt || "").slice(0,10) === today || t.dueDate === today : t.year === year;
+    }) || null;
+  }
+  function tipsSection(){
+    if (!window.GardenTips) return null;
+    var dismissed = localGet(TIP_DISMISS_KEY, {});
+    var tips = window.GardenTips.tipsFor({date:new Date(), settings:state.settings, plants:state.plants, weather:state.weather})
+      .filter(function(tip){ return dismissed[tip.id] !== tipDismissKey(tip); })
+      .slice(0, 6);
+    if (!tips.length) return null;
+    var row = el("div", {class:"hscroll", "data-keep-scroll":"tips"});
+    tips.forEach(function(tip){ row.appendChild(tipCard(tip)); });
+    return el("section", {}, [
+      el("div", {class:"section-title"}, [el("h2", {}, ["Garden tips"]), el("span", {class:"hint"}, [MONTH_NAMES[new Date().getMonth()]])]),
+      row
+    ]);
+  }
+  function tipCard(tip){
+    var card = el("article", {class:"tip-card tip-" + (tip.theme || "spring")});
+    card.appendChild(el("div", {class:"tip-head"}, [
+      el("span", {class:"tip-emoji", "aria-hidden":"true"}, [tip.emoji]),
+      el("div", {}, [
+        el("div", {class:"tip-kicker"}, [tip.weather ? "Weather tip" : "Seasonal tip"]),
+        el("div", {class:"tip-title"}, [tip.title])
+      ])
+    ]));
+    card.appendChild(el("div", {class:"tip-body"}, [tip.body]));
+    var actions = el("div", {class:"tip-actions"});
+    var added = tipAddedTask(tip);
+    if (added){
+      actions.appendChild(el("div", {class:"tip-added"}, [el("span", {html:icon("check")}), "In your tasks · " + relativeDay(added.dueDate)]));
+    } else {
+      var addBtn = el("button", {class:"btn btn-primary btn-sm"}, ["+ Add as task"]);
+      addBtn.addEventListener("click", function(){ addTipAsTask(tip, addBtn); });
+      var notNow = el("button", {class:"btn btn-ghost btn-sm"}, ["Not now"]);
+      notNow.addEventListener("click", function(){
+        var d = localGet(TIP_DISMISS_KEY, {});
+        d[tip.id] = tipDismissKey(tip);
+        localSet(TIP_DISMISS_KEY, d);
+        renderShell();
+        showToast("Tip hidden", {label:"Undo", fn:function(){
+          var d2 = localGet(TIP_DISMISS_KEY, {}); delete d2[tip.id]; localSet(TIP_DISMISS_KEY, d2); renderShell();
+        }});
+      });
+      actions.appendChild(addBtn);
+      actions.appendChild(notNow);
+    }
+    card.appendChild(actions);
+    return card;
+  }
+  async function addTipAsTask(tip, btn){
+    btn.disabled = true; btn.textContent = "Adding…";
+    var due = addDays(todayISO(), tip.task.dueInDays || 0);
+    try {
+      var created = await api("/tasks", {method:"POST", body:{
+        title: tip.task.title, description: tip.task.description || tip.body, dueDate: due,
+        kind: "tip", reason: "Garden tip", severity: "info", year: new Date(due + "T00:00:00").getFullYear()
+      }});
+      if (created) state.tasks.push(created);
+    } catch(e){
+      btn.disabled = false; btn.textContent = "Couldn't add — try again";
+      return;
+    }
+    buzz(); leafBurst(btn);
+    showToast("Added to your tasks — due " + relativeDay(due));
+    renderShell();
   }
 
   function severityChip(sev){
@@ -903,17 +1193,33 @@
     }).sort(function(a,b){ return (a.dueDate||"").localeCompare(b.dueDate||""); });
   }
 
+  // This week's list, grouped: Catch up (overdue) / Today / Tomorrow /
+  // Later this week — easier to scan than one long list with "Overdue"
+  // chips sprinkled through it.
   function tasksSection(tasks){
-    var sec = el("div", {class:"card", style:"margin-bottom:20px;"});
+    var sec = el("div", {class:"card", style:"margin:22px 0 18px;"});
     sec.appendChild(el("div", {class:"section-head"}, [
       el("h2", {}, ["This week"]),
-      el("span", {class:"hint"}, [tasks.length + (tasks.length===1?" open":" open")])
+      el("span", {class:"hint"}, [tasks.length ? tasks.length + " open" + (isTouch() ? " · swipe → when done" : "") : ""])
     ]));
     if (tasks.length === 0){
-      sec.appendChild(el("div", {class:"empty"}, ["Nothing due this week — I'll add tasks here each morning when something needs attention."]));
-    } else {
-      tasks.forEach(function(t){ sec.appendChild(taskListRow(t)); });
+      sec.appendChild(el("div", {class:"empty-fun"}, [el("span", {class:"big"}, ["🌻"]), "All clear this week! I'll add tasks here each morning when something needs attention."]));
+      return sec;
     }
+    var today = todayISO();
+    var groups = [
+      {label:"Catch up", cls:"catchup", test:function(t){ return t.dueDate && t.dueDate < today; }},
+      {label:"Today", test:function(t){ return t.dueDate === today; }},
+      {label:"Tomorrow", test:function(t){ return t.dueDate && daysFromToday(t.dueDate) === 1; }},
+      {label:"Later this week", test:function(t){ return t.dueDate && daysFromToday(t.dueDate) > 1; }},
+      {label:"Anytime", test:function(t){ return !t.dueDate; }}
+    ];
+    groups.forEach(function(g){
+      var items = tasks.filter(g.test);
+      if (!items.length) return;
+      sec.appendChild(el("div", {class:"task-group-label" + (g.cls ? " " + g.cls : "")}, [g.label, el("span", {class:"count"}, ["· " + items.length])]));
+      items.forEach(function(t){ sec.appendChild(taskListRow(t, {swipe:true, hideDate: g.label === "Today" || g.label === "Tomorrow"})); });
+    });
     return sec;
   }
 
@@ -934,43 +1240,170 @@
   }
 
   function upcomingSection(tasks){
-    var sec = el("div", {class:"card", style:"margin-bottom:20px;"});
+    var sec = el("div", {class:"card", style:"margin-bottom:18px;"});
     sec.appendChild(el("div", {class:"section-head"}, [
       el("h2", {}, ["Upcoming"]),
       el("span", {class:"hint"}, ["next 2 weeks"])
     ]));
     if (tasks.length === 0){
-      sec.appendChild(el("div", {class:"empty"}, ["Nothing scheduled in the two weeks after this one yet."]));
+      sec.appendChild(el("div", {class:"empty"}, ["Nothing scheduled for the two weeks after this one yet — a good moment to browse the garden tips above."]));
     } else {
-      tasks.forEach(function(t){ sec.appendChild(taskListRow(t)); });
+      tasks.forEach(function(t){ sec.appendChild(taskListRow(t, {swipe:true})); });
     }
     return sec;
   }
 
+  // Consecutive past calendar weeks (most recent first) in which every task
+  // due that week got done. Weeks with nothing due don't break the streak.
+  function weekStreak(){
+    var streak = 0;
+    var start = weekDatesFor(new Date())[0];
+    for (var k=1; k<=26; k++){
+      var ws = new Date(start); ws.setDate(start.getDate() - 7*k);
+      var we = new Date(ws); we.setDate(ws.getDate() + 6);
+      var from = isoDate(ws.getFullYear(), ws.getMonth()+1, ws.getDate());
+      var to = isoDate(we.getFullYear(), we.getMonth()+1, we.getDate());
+      var due = state.tasks.filter(function(t){ return t.dueDate && t.dueDate >= from && t.dueDate <= to; });
+      if (!due.length) continue;
+      if (due.every(function(t){ return t.status === "done"; })) streak++;
+      else break;
+    }
+    return streak;
+  }
+
+  // "Recently done" as a small celebration: what got done in the last 7
+  // days by kind of job, plus a streak — with the plain list tucked away.
   function doneSection(tasks){
-    var sec = el("div", {class:"card", style:"margin-bottom:20px;"});
-    sec.appendChild(el("div", {class:"section-head"}, [el("h2", {}, ["Recently done"])]));
-    tasks.forEach(function(t){ sec.appendChild(taskListRow(t)); });
+    var sec = el("div", {class:"card", style:"margin-bottom:18px;"});
+    var weekAgo = Date.now() - 7 * 86400000;
+    var doneThisWeek = state.tasks.filter(function(t){ return t.status === "done" && t.completedAt && new Date(t.completedAt).getTime() >= weekAgo; });
+    var counts = {}, order = [];
+    doneThisWeek.forEach(function(t){
+      var c = taskCategory(t);
+      if (!counts[c.key]){ counts[c.key] = {cat:c, n:0}; order.push(c.key); }
+      counts[c.key].n++;
+    });
+    var parts = order.map(function(k){ var c = counts[k]; return c.cat.emoji + " " + c.cat.verb + (c.n > 1 ? " ×" + c.n : ""); });
+    var streak = weekStreak();
+    var text = doneThisWeek.length
+      ? [el("div", {class:"celebrate-title"}, ["Nice work — " + doneThisWeek.length + (doneThisWeek.length === 1 ? " job" : " jobs") + " done this week!"]),
+         el("div", {class:"celebrate-sub"}, [parts.join(" · ")])]
+      : [el("div", {class:"celebrate-title"}, ["Recently done"]),
+         el("div", {class:"celebrate-sub"}, ["Nothing ticked off in the last 7 days yet."])];
+    if (streak >= 2) text.push(el("span", {class:"chip chip-amber streak"}, ["🔥 " + streak + "-week streak — every task done"]));
+    sec.appendChild(el("div", {class:"celebrate"}, [el("span", {class:"celebrate-emoji", "aria-hidden":"true"}, [doneThisWeek.length ? "🎉" : "🌾"]), el("div", {}, text)]));
+    var details = el("details", {class:"done-list"}, [el("summary", {}, ["Show recently done (" + tasks.length + ")"])]);
+    tasks.forEach(function(t){ details.appendChild(taskListRow(t)); });
+    sec.appendChild(details);
     return sec;
   }
 
-  // A minimal, single-line, clickable task row for the dashboard lists — a
-  // colored dot (this task's plant), the title, a couple of compact badges,
-  // and the date. Click opens the full detail in a modal (openTaskDetail);
-  // there's no inline checkbox or expand here on purpose, per the user's
-  // request to keep the list itself minimal.
-  function taskListRow(t){
+  // A clickable task row: category icon (tinted with the plant's color),
+  // title, and a small meta line (plant, date, photo/overdue badges). Click
+  // opens the full detail (openTaskDetail). opts.swipe: swipe right to mark
+  // it done without opening it — still no checkbox cluttering the list.
+  function taskListRow(t, opts){
+    opts = opts || {};
     var overdue = t.status !== "done" && t.dueDate && t.dueDate < todayISO();
-    var row = el("button", {class:"task-mini" + (t.status==="done" ? " done" : "")}, [
-      el("span", {class:"task-mini-dot", style:"background:" + (t.plantId ? plantColorFor(t.plantId) : "var(--ink-faint)") + ";"}),
-      el("span", {class:"task-mini-title"}, [t.title]),
+    var cat = taskCategory(t);
+    var color = t.plantId ? plantColorFor(t.plantId) : "var(--moss)";
+    var meta = el("span", {class:"task-mini-meta"}, [
       t.plantName ? el("span", {class:"chip chip-moss"}, [t.plantName]) : null,
-      overdue ? el("span", {class:"chip chip-warn"}, ["Overdue"]) : null,
-      t.requestsPhoto ? el("span", {class:"chip chip-neutral"}, ["📷"]) : null,
-      el("span", {class:"task-mini-date"}, [fmtDate(t.dueDate)])
+      t.kind === "tip" ? el("span", {class:"chip chip-amber"}, ["Tip"]) : null,
+      overdue ? el("span", {class:"chip chip-warn"}, [relativeDay(t.dueDate)]) : null,
+      t.requestsPhoto ? el("span", {class:"chip chip-neutral"}, ["📷 photo"]) : null,
+      (!overdue && !opts.hideDate && t.dueDate) ? el("span", {}, [t.status === "done" && t.completedAt ? "done " + fmtDate(t.completedAt) : fmtDate(t.dueDate)]) : null
     ]);
-    row.addEventListener("click", function(){ openTaskDetail(t.id, {allowComplete:true}); });
-    return row;
+    var row = el("button", {class:"task-mini" + (t.status==="done" ? " done" : ""), style:"--task-color:" + color + ";"}, [
+      el("span", {class:"task-mini-icon", html:icon(cat.icon)}),
+      el("span", {class:"task-mini-main"}, [el("span", {class:"task-mini-title"}, [t.title]), meta])
+    ]);
+    row.addEventListener("click", function(){
+      if (row.__swiped) { row.__swiped = false; return; }
+      openTaskDetail(t.id, {allowComplete:true});
+    });
+    if (!opts.swipe || t.status === "done") return row;
+    var wrap = el("div", {class:"swipe-wrap"}, [
+      el("div", {class:"swipe-bg", "aria-hidden":"true"}, [el("span", {html:icon("check")}), "Done"]),
+      row
+    ]);
+    makeSwipeable(wrap, row, function(){ completeTaskFromList(t, wrap, row); });
+    return wrap;
+  }
+
+  // Swipe right past ~35% of the row to complete. Vertical scrolling keeps
+  // working (touch-action: pan-y); a swipe never also counts as a tap.
+  function makeSwipeable(wrap, row, onComplete){
+    var startX = 0, startY = 0, tracking = false, dragging = false, armed = false, pid = null;
+    row.addEventListener("pointerdown", function(e){
+      if (e.button !== undefined && e.button !== 0) return;
+      tracking = true; dragging = false; armed = false; pid = e.pointerId;
+      startX = e.clientX; startY = e.clientY;
+    });
+    row.addEventListener("pointermove", function(e){
+      if (!tracking || e.pointerId !== pid) return;
+      var dx = e.clientX - startX, dy = e.clientY - startY;
+      if (!dragging){
+        if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) { tracking = false; return; }
+        if (dx > 10 && dx > Math.abs(dy) * 1.5){
+          dragging = true; swipeActive = true;
+          try { row.setPointerCapture(pid); } catch(err){}
+          wrap.classList.add("dragging");
+        } else return;
+      }
+      var tx = Math.max(0, dx);
+      row.style.transform = "translateX(" + tx + "px)";
+      var nowArmed = tx > Math.min(130, wrap.offsetWidth * 0.35);
+      if (nowArmed !== armed){ armed = nowArmed; wrap.classList.toggle("armed", armed); if (armed) buzz(8); }
+    });
+    function end(){
+      if (!tracking) return;
+      tracking = false;
+      if (!dragging) return;
+      dragging = false;
+      row.__swiped = true;
+      setTimeout(function(){ row.__swiped = false; }, 400);
+      row.classList.add("animating");
+      if (armed){
+        row.style.transform = "translateX(" + wrap.offsetWidth + "px)";
+        onComplete();
+      } else {
+        row.style.transform = "translateX(0)";
+        setTimeout(function(){ wrap.classList.remove("dragging", "armed"); row.classList.remove("animating"); swipeActive = false; }, 230);
+      }
+    }
+    row.addEventListener("pointerup", end);
+    row.addEventListener("pointercancel", end);
+  }
+
+  async function setTaskStatus(t, status){
+    await api("/tasks/" + t.id, {method:"PATCH", body:{status:status}});
+    var local = state.tasks.find(function(x){ return x.id === t.id; });
+    if (local){ local.status = status; local.completedAt = status === "done" ? new Date().toISOString() : null; }
+  }
+
+  async function completeTaskFromList(t, wrap, row){
+    buzz(15);
+    leafBurst(row.querySelector(".task-mini-icon") || row);
+    wrap.classList.add("completing");
+    try {
+      await setTaskStatus(t, "done");
+    } catch(e){
+      swipeActive = false;
+      showToast("Couldn't save — try again");
+      renderShell();
+      return;
+    }
+    setTimeout(function(){
+      swipeActive = false;
+      renderShell();
+      showToast("Nice! “" + t.title + "” done", {label:"Undo", fn: async function(){
+        try { await setTaskStatus(t, "pending"); } catch(e){ showToast("Couldn't undo — try again"); }
+        renderShell();
+      }});
+      // Pick up anything the server did on completion (e.g. schedule stamps).
+      loadGardenData().then(function(){ if (!modalOpenFor && !userIsBusy()) renderShell(); }).catch(function(){});
+    }, 420);
   }
 
   function statusChip(t){
@@ -1030,6 +1463,7 @@
           doneBtn.textContent = "Couldn't save — try again";
           return;
         }
+        if (newStatus === "done"){ buzz(15); leafBurst(doneBtn); }
         await refresh();
       });
       statusRow.appendChild(doneBtn);
@@ -1088,50 +1522,176 @@
     return wrap;
   }
 
+  // ---- Library: photo-first cards, searchable/filterable/sortable, shown
+  // either as a grid or as "shelves" grouped by where each plant lives.
+  // Search typing only repaints the results (not the whole shell), so the
+  // field keeps focus. ----
+  var LIB_VIEW_KEY = "gc.libraryView";
+  var lib = {q:"", filter:"all", sort:"name", view: localGet(LIB_VIEW_KEY, "grid")};
+
   function librarySection(){
-    var sec = el("div", {class:"card"});
+    var wrap = el("div", {});
     if (state.plants.length === 0){
-      sec.appendChild(el("div", {class:"section-head"}, [el("h2", {}, ["Your library"])]));
-      var cta = el("div", {style:"text-align:center;padding:24px 12px;"}, [
-        el("div", {html:icon("leaf"), class:"icon-lg", style:"margin:0 auto 10px;"}),
-        el("p", {class:"lead", style:"margin-bottom:14px;"}, ["No plants yet — add your first one and I'll build a care guide for it."])
+      var sec = el("div", {class:"card empty-fun"}, [
+        el("span", {class:"big"}, ["🪴"]),
+        el("h2", {style:"font-size:20px;margin-bottom:6px;"}, ["Your library is empty"]),
+        el("p", {style:"margin:0 0 14px;"}, ["Add your first plant and I'll build a care guide and a yearly schedule for it."])
       ]);
       var ctaBtn = el("button", {class:"btn btn-primary"}, ["+ Start building your plant library"]);
       ctaBtn.addEventListener("click", openPlantWizard);
-      cta.appendChild(ctaBtn);
-      sec.appendChild(cta);
-    } else {
-      sec.appendChild(el("div", {class:"section-head"}, [
-        el("h2", {}, ["Your library"]),
-        el("button", {class:"btn btn-sm", onclick:openPlantWizard}, ["+ Add a plant"])
-      ]));
-      var grid = el("div", {class:"plant-grid"});
-      state.plants.forEach(function(p){ grid.appendChild(plantCard(p)); });
-      sec.appendChild(grid);
+      sec.appendChild(ctaBtn);
+      wrap.appendChild(sec);
+      return wrap;
     }
-    return sec;
+
+    var addBtn = el("button", {class:"btn btn-sm btn-primary"}, ["+ Add a plant"]);
+    addBtn.addEventListener("click", openPlantWizard);
+    var head = el("div", {class:"section-title", style:"margin-top:4px;align-items:center;"}, [
+      el("div", {}, [
+        el("h2", {}, ["Your library"]),
+        el("div", {class:"hint"}, [state.plants.length + (state.plants.length === 1 ? " plant" : " plants")])
+      ]),
+      addBtn
+    ]);
+    wrap.appendChild(head);
+
+    var toolbar = el("div", {class:"lib-toolbar"});
+    var results = el("div", {});
+
+    if (state.plants.length >= 6){
+      var search = el("input", {type:"search", placeholder:"Search your plants", value:lib.q, "aria-label":"Search your plants", autocomplete:"off"});
+      search.addEventListener("input", function(){ lib.q = search.value; renderLibraryResults(results); });
+      toolbar.appendChild(el("div", {class:"search-wrap"}, [el("span", {html:icon("search")}), search]));
+    }
+
+    // Filter chips: All, Needs attention (if any), then one per plant type present.
+    var chips = el("div", {class:"filter-chips", role:"toolbar", "aria-label":"Filter plants"});
+    var filters = [["all", "All"]];
+    if (state.plants.some(function(p){ return p.healthStatus === "needs_attention"; })) filters.push(["attn", "⚠︎ Needs care"]);
+    var typesPresent = [];
+    state.plants.forEach(function(p){ var ty = p.type || "other"; if (typesPresent.indexOf(ty) === -1) typesPresent.push(ty); });
+    if (typesPresent.length > 1) typesPresent.forEach(function(ty){ filters.push(["type:" + ty, typeEmoji(ty) + " " + ty.charAt(0).toUpperCase() + ty.slice(1)]); });
+    if (filters.every(function(f){ return f[0] !== lib.filter; })) lib.filter = "all";
+    filters.forEach(function(f){
+      var chip = el("button", {class:"fchip" + (lib.filter === f[0] ? " active" : ""), "aria-pressed": lib.filter === f[0] ? "true" : "false"}, [f[1]]);
+      chip.addEventListener("click", function(){ lib.filter = f[0]; renderShell(); });
+      chips.appendChild(chip);
+    });
+    toolbar.appendChild(chips);
+
+    var seg = el("div", {class:"seg", role:"group", "aria-label":"View"});
+    [["grid","Grid"],["spots","By spot"]].forEach(function(v){
+      var b = el("button", {class: lib.view === v[0] ? "active" : "", "aria-pressed": lib.view === v[0] ? "true" : "false"}, [v[1]]);
+      b.addEventListener("click", function(){ lib.view = v[0]; localSet(LIB_VIEW_KEY, v[0]); renderShell(); });
+      seg.appendChild(b);
+    });
+    var sortSel = el("select", {class:"sort-select", "aria-label":"Sort plants"}, [
+      ["name","A → Z"], ["care","Needs care soonest"], ["newest","Newest first"]
+    ].map(function(o){ var opt = el("option", {value:o[0]}, [o[1]]); if (lib.sort === o[0]) opt.setAttribute("selected","selected"); return opt; }));
+    sortSel.addEventListener("change", function(){ lib.sort = sortSel.value; renderLibraryResults(results); });
+    toolbar.appendChild(el("div", {class:"lib-toolbar-row"}, [seg, sortSel]));
+
+    wrap.appendChild(toolbar);
+    wrap.appendChild(results);
+    renderLibraryResults(results);
+    return wrap;
+  }
+
+  function filteredSortedPlants(){
+    var q = lib.q.trim().toLowerCase();
+    var list = state.plants.filter(function(p){
+      if (lib.filter === "attn" && p.healthStatus !== "needs_attention") return false;
+      if (lib.filter.indexOf("type:") === 0 && (p.type || "other") !== lib.filter.slice(5)) return false;
+      if (!q) return true;
+      return [p.name, p.type, p.spot, p.species].some(function(v){ return v && String(v).toLowerCase().indexOf(q) !== -1; });
+    });
+    if (lib.sort === "newest"){
+      list.sort(function(a,b){ return String(b.createdAt||"").localeCompare(String(a.createdAt||"")); });
+    } else if (lib.sort === "care"){
+      var key = function(p){
+        var t = nextTaskFor(p.id);
+        return (p.healthStatus === "needs_attention" ? "0" : "1") + (t ? t.dueDate : "9999");
+      };
+      list.sort(function(a,b){ return key(a).localeCompare(key(b)) || a.name.localeCompare(b.name); });
+    } else {
+      list.sort(function(a,b){ return a.name.localeCompare(b.name); });
+    }
+    return list;
+  }
+
+  function renderLibraryResults(container){
+    container.innerHTML = "";
+    var list = filteredSortedPlants();
+    if (!list.length){
+      container.appendChild(el("div", {class:"no-results"}, [lib.q ? "No plants match “" + lib.q.trim() + "”." : "No plants match this filter."]));
+      return;
+    }
+    if (lib.view === "spots"){
+      var groups = {}, order = [];
+      list.forEach(function(p){
+        var spot = p.spot || "Somewhere in the garden";
+        if (!groups[spot]){ groups[spot] = []; order.push(spot); }
+        groups[spot].push(p);
+      });
+      order.sort(function(a,b){ return groups[b].length - groups[a].length || a.localeCompare(b); });
+      order.forEach(function(spot){
+        var row = el("div", {class:"hscroll", "data-keep-scroll":"shelf-" + spot});
+        groups[spot].forEach(function(p){ row.appendChild(plantCard(p)); });
+        container.appendChild(el("section", {class:"shelf"}, [
+          el("div", {class:"shelf-head"}, [el("h3", {}, [spot]), el("span", {class:"hint"}, [groups[spot].length + (groups[spot].length === 1 ? " plant" : " plants")])]),
+          row
+        ]));
+      });
+      return;
+    }
+    var grid = el("div", {class:"plant-grid"});
+    list.forEach(function(p){ grid.appendChild(plantCard(p)); });
+    if (!lib.q && lib.filter === "all"){
+      var tile = el("button", {class:"add-tile"}, [el("span", {class:"plus"}, ["+"]), "Add a plant"]);
+      tile.addEventListener("click", openPlantWizard);
+      grid.appendChild(tile);
+    }
+    container.appendChild(grid);
+  }
+
+  // Photo (or a colored type-emoji placeholder) used by library cards and
+  // the plant detail hero.
+  function plantPhotoEl(p){
+    var lastPhoto = (p.photos && p.photos.length) ? p.photos[p.photos.length-1] : null;
+    if (lastPhoto) return el("img", {src:lastPhoto.dataUrl, alt:p.name, loading:"lazy"});
+    return el("div", {class:"plant-photo-ph", style:"--ph-color:" + plantColorFor(p.id) + ";", "aria-hidden":"true"}, [typeEmoji(p.type)]);
   }
 
   function plantCard(p){
-    var lastPhoto = (p.photos && p.photos.length) ? p.photos[p.photos.length-1] : null;
-    var thumb = lastPhoto
-      ? el("img", {class:"plant-thumb", src:lastPhoto.dataUrl, alt:p.name})
-      : el("div", {class:"plant-thumb-placeholder", html:icon("leaf")});
-    var status = p.healthStatus === "needs_attention"
-      ? el("span", {class:"chip chip-warn"}, ["Needs attention"])
-      : (p.researched ? el("span", {class:"chip chip-moss"}, ["Care guide ready"]) : el("span", {class:"chip chip-neutral"}, ["Getting to know it"]));
     var k = plantKnowledge(p);
-    var card = el("button", {class:"plant-card"}, [
-      thumb,
-      el("div", {class:"plant-info"}, [
-        el("div", {class:"plant-name"}, [p.name]),
-        el("div", {class:"plant-type"}, [p.type + (p.spot ? " · " + p.spot : "")]),
-        el("div", {class:"plant-status"}, [status]),
-        el("div", {class:"grade-row", title:gradeLabelFor(k.score) + " · " + k.score + "%"}, [
-          el("div", {class:"grade-track"}, [el("div", {class:"grade-fill", style:"width:" + k.score + "%;"})])
-        ])
+    var lvl = plantLevel(k.score);
+    var attn = p.healthStatus === "needs_attention";
+    var photo = el("div", {class:"plant-photo"}, [
+      plantPhotoEl(p),
+      el("div", {class:"card-badges"}, [
+        el("span", {class:"level-badge", title:gradeLabelFor(k.score) + " · " + k.score + "%"}, [lvl.emoji + " " + lvl.name]),
+        attn ? el("span", {class:"attn-badge"}, ["Needs care"]) : null
+      ]),
+      el("div", {class:"plant-overlay"}, [
+        el("div", {class:"plant-card-name"}, [p.name]),
+        el("div", {class:"plant-card-sub"}, [(p.type ? p.type.charAt(0).toUpperCase() + p.type.slice(1) : "Plant") + (p.spot ? " · " + p.spot : "")])
       ])
     ]);
+    var next = nextTaskFor(p.id);
+    var nextLine;
+    if (next){
+      var overdue = next.dueDate < todayISO();
+      var when = relativeDay(next.dueDate);
+      nextLine = el("div", {class:"plant-next" + (overdue ? " overdue" : "")}, [
+        el("span", {"aria-hidden":"true"}, [taskCategory(next).emoji]),
+        el("span", {class:"plant-next-text"}, [el("b", {}, [when.charAt(0).toUpperCase() + when.slice(1) + ": "]), next.title])
+      ]);
+    } else if (!p.researched){
+      nextLine = el("div", {class:"plant-next"}, [el("span", {"aria-hidden":"true"}, ["⏳"]), el("span", {class:"plant-next-text"}, ["Building its care guide…"])]);
+    } else {
+      nextLine = el("div", {class:"plant-next"}, [el("span", {"aria-hidden":"true"}, ["✓"]), el("span", {class:"plant-next-text"}, ["All caught up"])]);
+    }
+    var card = el("button", {class:"plant-card", "aria-label": p.name + (attn ? " — needs attention" : "")}, [photo, nextLine]);
     card.addEventListener("click", function(){ openPlantDetail(p.id); });
     return card;
   }
@@ -1154,6 +1714,15 @@
       }));
       container.appendChild(el("div", {class:"field"}, [el("label", {}, ["Weekly photo check-in day"]), daySelect]));
 
+      // Seasonal garden tips flip by six months south of the equator.
+      var hemi = (s.location && s.location.hemisphere) || "";
+      var hemiSelect = el("select", {}, [["", "Automatic (from your location)"], ["north", "Northern hemisphere"], ["south", "Southern hemisphere"]].map(function(o){
+        var opt = el("option", {value:o[0]}, [o[1]]);
+        if (hemi === o[0]) opt.setAttribute("selected","selected");
+        return opt;
+      }));
+      container.appendChild(el("div", {class:"field"}, [el("label", {}, ["Seasons for garden tips"]), hemiSelect]));
+
       container.appendChild(el("p", {style:"font-size:12.5px;color:var(--ink-faint);margin:0 0 16px;"}, [
         "Weather and care checks run early each morning. New plants get researched within about an hour of adding them — no need to wait for the daily check-in."
       ]));
@@ -1162,6 +1731,7 @@
       saveBtn.addEventListener("click", async function(){
         saveBtn.disabled = true; saveBtn.textContent = "Saving…";
         var loc = Object.assign({}, s.location, {label: locInput.value || "Unspecified"});
+        if (hemiSelect.value) loc.hemisphere = hemiSelect.value; else delete loc.hemisphere;
         try {
           await api("/settings", {method:"PATCH", body:{location:loc, photoCheckinDay:daySelect.value}});
         } catch(e){
@@ -1314,7 +1884,10 @@
       var dateStr = isoDate(year, month+1, dayNum);
       var dayTasks = map[dateStr] || [];
       var isToday = dateStr === todayStr;
-      var cell = el("div", {style:"background:var(--surface);min-height:66px;padding:4px;display:flex;flex-direction:column;gap:4px;" + (isToday ? "box-shadow:inset 0 0 0 2px var(--moss);" : "")});
+      var cell = el("div", {style:"background:var(--surface);min-height:66px;padding:4px;display:flex;flex-direction:column;gap:4px;cursor:pointer;" + (isToday ? "box-shadow:inset 0 0 0 2px var(--moss);" : ""), title:"Show this week"});
+      // Tapping a day opens its week as a readable list — the dots alone
+      // are too small to hit reliably on a phone.
+      cell.addEventListener("click", (function(ds){ return function(){ yearlyPlan.mode = "week"; yearlyPlan.anchor = ds; renderShell(); }; })(dateStr));
       cell.appendChild(el("div", {style:"font-size:11px;color:var(--ink-faint);font-weight:600;"}, [String(dayNum)]));
       if (dayTasks.length){
         var dots = el("div", {style:"display:flex;flex-wrap:wrap;gap:3px;"});
@@ -1380,37 +1953,113 @@
     var p = state.plants.find(function(x){ return x.id===id; });
     if (!p) return;
     showModal(function(container){
-      container.appendChild(el("div", {class:"modal-head"}, [
-        el("h3", {}, [p.name]),
-        el("button", {class:"modal-close", onclick:function(){ modalOpenFor=null; closeModal(); }}, ["×"])
-      ]));
-      container.appendChild(el("div", {class:"plant-type", style:"margin-bottom:10px;"}, [p.type + (p.spot?" · "+p.spot:"") + (p.species?" · "+p.species:"")]));
-
-      var pk = plantKnowledge(p);
-      container.appendChild(el("div", {class:"grade-block", style:"margin-bottom:16px;"}, [
-        el("div", {style:"display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;"}, [
-          el("span", {style:"font-size:12.5px;font-weight:600;color:var(--ink-soft);"}, ["How well I know this plant"]),
-          el("span", {style:"font-size:12.5px;color:var(--ink-faint);"}, [gradeLabelFor(pk.score) + " · " + pk.score + "%"])
+      // Hero: the latest photo full-bleed (or a colored placeholder), with
+      // the name over it.
+      var closeBtn = el("button", {class:"hero-close", "aria-label":"Close", onclick:function(){ modalOpenFor=null; closeModal(); }}, ["×"]);
+      container.appendChild(el("div", {class:"detail-hero"}, [
+        plantPhotoEl(p),
+        el("div", {class:"plant-overlay"}, [
+          el("h3", {class:"plant-card-name", style:"color:inherit;"}, [p.name]),
+          el("div", {class:"plant-card-sub"}, [[p.type, p.spot, p.species].filter(Boolean).join(" · ")])
         ]),
-        el("div", {class:"grade-track"}, [el("div", {class:"grade-fill", style:"width:" + pk.score + "%;"})]),
-        pk.reasons.length ? el("div", {style:"margin-top:6px;font-size:12px;color:var(--ink-faint);"}, ["Missing: " + pk.reasons.join(", ")]) : null
+        closeBtn
       ]));
 
-      var overviewTabBtn = el("button", {class:"btn btn-sm" + (plantDetailTab==="overview" ? "" : " btn-ghost")}, ["Overview"]);
-      var careTabBtn = el("button", {class:"btn btn-sm" + (plantDetailTab==="care" ? "" : " btn-ghost")}, ["Care guide"]);
+      container.appendChild(plantLevelBlock(p));
+
       var issueCount = state.tasks.filter(function(t){ return t.plantId === p.id && t.kind === "issue"; }).length;
-      var issuesTabBtn = el("button", {class:"btn btn-sm" + (plantDetailTab==="issues" ? "" : " btn-ghost")}, [
-        "Issues" + ((p.activeIssue && p.activeIssue.description) ? " •" : (issueCount ? " (" + issueCount + ")" : ""))
-      ]);
-      overviewTabBtn.addEventListener("click", function(){ plantDetailTab = "overview"; openPlantDetail(p.id, {keepTab:true}); });
-      careTabBtn.addEventListener("click", function(){ plantDetailTab = "care"; openPlantDetail(p.id, {keepTab:true}); });
-      issuesTabBtn.addEventListener("click", function(){ plantDetailTab = "issues"; openPlantDetail(p.id, {keepTab:true}); });
-      container.appendChild(el("div", {class:"row", style:"gap:6px;margin-bottom:16px;border-bottom:1px solid var(--line);padding-bottom:12px;"}, [overviewTabBtn, careTabBtn, issuesTabBtn]));
+      var tabs = [
+        ["overview", "Overview"],
+        ["care", "Care guide"],
+        ["issues", "Issues" + ((p.activeIssue && p.activeIssue.description) ? " •" : (issueCount ? " (" + issueCount + ")" : ""))]
+      ];
+      var seg = el("div", {class:"seg", role:"tablist"});
+      tabs.forEach(function(t){
+        var b = el("button", {class: plantDetailTab === t[0] ? "active" : "", role:"tab", "aria-selected": plantDetailTab === t[0] ? "true" : "false"}, [t[1]]);
+        b.addEventListener("click", function(){ plantDetailTab = t[0]; openPlantDetail(p.id, {keepTab:true, keepScroll:true}); });
+        seg.appendChild(b);
+      });
+      container.appendChild(el("div", {class:"detail-tabs"}, [seg]));
 
       if (plantDetailTab === "care") buildPlantCareTab(container, p);
       else if (plantDetailTab === "issues") buildPlantIssuesTab(container, p);
       else buildPlantOverviewTab(container, p);
+    }, {keepScroll: opts.keepScroll});
+  }
+
+  // "How well I know this plant" as a growth level (Seedling → Sprout →
+  // Bloom), with a button for the single most useful next step instead of
+  // a list of what's missing.
+  function plantLevelBlock(p){
+    var pk = plantKnowledge(p);
+    var lvl = plantLevel(pk.score);
+    var main = el("div", {class:"level-main"}, [
+      el("div", {class:"level-title"}, [lvl.name, el("span", {}, [gradeLabelFor(pk.score) + " · " + pk.score + "%"])]),
+      el("div", {class:"grade-track"}, [el("div", {class:"grade-fill", style:"width:" + pk.score + "%;"})])
+    ]);
+    var block = el("div", {class:"level-block"}, [el("span", {class:"level-emoji", "aria-hidden":"true"}, [lvl.emoji]), main]);
+    var reason = pk.reasons[0];
+    if (!reason){
+      main.appendChild(el("div", {class:"level-next"}, ["I know this plant well — keep the photos coming!"]));
+      return block;
+    }
+    var step;
+    if (/care guide/.test(reason)) step = ["Research its care guide", function(btn){
+      btn.disabled = true; btn.textContent = "Researching…";
+      researchPlant(p.id).then(async function(ok){
+        if (ok){ await loadGardenData(); openPlantDetail(p.id, {keepTab:true}); }
+        else { btn.disabled = false; btn.textContent = "Couldn't research — try again"; }
+      });
+    }];
+    else if (/photo|size/.test(reason)) step = [/overdue/.test(reason) && p.photos && p.photos.length ? "Add a fresh photo" : "Add a photo", function(){
+      // The photo picker lives on the Overview tab — open it there. Still
+      // inside this click, so the browser allows opening the file picker.
+      if (plantDetailTab !== "overview"){ plantDetailTab = "overview"; openPlantDetail(p.id, {keepTab:true, keepScroll:true}); }
+      var input = document.querySelector("#modalContent .overview-photo-input");
+      if (input) input.click();
+    }];
+    else if (/issue/.test(reason)) step = ["See the issue", function(){ plantDetailTab = "issues"; openPlantDetail(p.id, {keepTab:true, keepScroll:true}); }];
+    main.appendChild(el("div", {class:"level-next"}, ["Next step: " + reason + "."]));
+    if (step){
+      var btn = el("button", {class:"btn btn-sm level-btn"}, [step[0]]);
+      btn.addEventListener("click", function(){ step[1](btn); });
+      block.appendChild(btn);
+    }
+    return block;
+  }
+
+  // Growth journal: every photo as a dated card (newest first), plus a
+  // draggable before/after comparison of the first and latest photo.
+  function growthJournal(p){
+    var wrap = el("div", {});
+    var photos = (p.photos || []).slice();
+    if (photos.length >= 2){
+      var first = photos[0], latest = photos[photos.length-1];
+      var cmp = el("div", {class:"compare", style:"--split:50%;"}, [
+        el("img", {src:first.dataUrl, alt:"First photo"}),
+        el("img", {class:"compare-after", src:latest.dataUrl, alt:"Latest photo"}),
+        el("div", {class:"compare-line"}),
+        el("span", {class:"compare-tag", style:"left:8px;"}, [fmtDate(first.date)]),
+        el("span", {class:"compare-tag", style:"right:8px;"}, ["Now"])
+      ]);
+      var range = el("input", {type:"range", min:"0", max:"100", value:"50", "aria-label":"Compare first and latest photo"});
+      range.addEventListener("input", function(){ cmp.style.setProperty("--split", range.value + "%"); });
+      cmp.appendChild(range);
+      wrap.appendChild(cmp);
+      wrap.appendChild(el("div", {class:"hint", style:"font-size:12px;color:var(--ink-faint);margin-bottom:10px;"}, ["Drag to compare your first photo with the latest."]));
+    }
+    var row = el("div", {class:"hscroll", style:"margin-bottom:8px;"});
+    photos.slice().reverse().forEach(function(ph){
+      row.appendChild(el("div", {class:"journal-card"}, [
+        el("img", {src:ph.dataUrl, alt:"Photo from " + fmtDate(ph.date), loading:"lazy"}),
+        el("div", {class:"jc-body"}, [
+          el("div", {class:"jc-date"}, [fmtDate(ph.date)]),
+          (ph.summary || ph.userNote) ? el("div", {class:"jc-text"}, [ph.summary || ph.userNote]) : null
+        ])
+      ]));
     });
+    wrap.appendChild(row);
+    return wrap;
   }
 
   // A plantDetails entry can be either the plain string v12 first saved, or
@@ -1448,24 +2097,22 @@
     }
 
     container.appendChild(el("div", {class:"section-head", style:"margin-bottom:8px;"}, [
-      el("h3", {style:"font-size:15px;"}, ["Profile"]),
-      el("span", {class:"hint"}, ["photo + what you know about this one"])
+      el("h3", {style:"font-size:15px;"}, ["Growth journal"]),
+      el("span", {class:"hint"}, [(p.photos && p.photos.length) ? p.photos.length + (p.photos.length === 1 ? " photo" : " photos") : "photos over time"])
     ]));
 
     if (p.photos && p.photos.length){
-      var pw = el("div", {class:"plant-detail-photos", style:"margin-bottom:8px;"});
-      p.photos.forEach(function(ph){ pw.appendChild(el("img", {src:ph.dataUrl, title:fmtDate(ph.date)})); });
-      container.appendChild(pw);
+      container.appendChild(growthJournal(p));
       var latest = p.photos[p.photos.length-1];
       if (latest.summary) container.appendChild(el("div", {class:"agent-note", style:"margin-bottom:10px;"}, [latest.summary]));
     } else {
-      container.appendChild(el("div", {class:"empty", style:"margin-bottom:8px;"}, ["No photo yet."]));
+      container.appendChild(el("div", {class:"empty", style:"margin-bottom:8px;"}, ["No photos yet — add one and I'll start a journal so you can watch it grow."]));
     }
 
     var noteInput = el("textarea", {placeholder:"Anything you've noticed? (optional)", style:"margin-bottom:6px;min-height:44px;"});
     container.appendChild(noteInput);
     var addPhotoLabel = el("label", {class:"btn btn-sm", style:"display:inline-block;"}, [p.photos && p.photos.length ? "+ Update photo" : "+ Add photo"]);
-    var addPhotoInput = el("input", {type:"file", accept:"image/*", class:"sr-only"});
+    var addPhotoInput = el("input", {type:"file", accept:"image/*", class:"sr-only overview-photo-input"});
     addPhotoLabel.appendChild(addPhotoInput);
     var addPhotoResult = el("div", {});
     container.appendChild(addPhotoLabel);
@@ -1504,7 +2151,7 @@
     // the user typed, with a single Add/Edit action per row.
     var detailsList = el("div", {style:"margin-top:14px;"});
     if (p.sizeInfo){
-      var sizeRow = el("div", {class:"row", style:"justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);"}, [
+      var sizeRow = el("div", {class:"detail-row"}, [
         el("div", {style:"font-size:13px;"}, [el("span", {style:"color:var(--ink-faint);"}, ["Size "]), p.sizeInfo]),
         el("span", {style:"font-size:11px;color:var(--ink-faint);"}, ["from photos"])
       ]);
@@ -1512,7 +2159,7 @@
     }
     GET_TO_KNOW_QUESTIONS.forEach(function(q, qi){
       var entry = detailEntryOf(p, q.key);
-      var detailRow = el("div", {class:"row", style:"justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);"});
+      var detailRow = el("div", {class:"detail-row"});
       var textPart = entry
         ? el("div", {style:"font-size:13px;"}, [el("span", {style:"color:var(--ink-faint);"}, [q.shortLabel + " "]), entry.display || entry.raw])
         : el("div", {style:"font-size:13px;color:var(--ink-faint);"}, [q.shortLabel + " — not set"]);
@@ -1764,15 +2411,53 @@
     });
   }
 
-  function showModal(build){
+  // On phones the modal is a bottom sheet (CSS): the handle at its top can
+  // be dragged down to dismiss it. opts.keepScroll keeps the sheet's scroll
+  // position when rebuilding the same modal in place (e.g. switching tabs).
+  function showModal(build, opts){
+    opts = opts || {};
     var overlay = document.getElementById("overlay");
     var content = document.getElementById("modalContent");
+    var wasHidden = overlay.hidden;
+    var scroll = content.scrollTop;
     content.innerHTML = "";
+    var handle = el("div", {class:"sheet-handle", "aria-hidden":"true"});
+    content.appendChild(handle);
+    attachSheetDrag(handle, content);
     build(content);
     overlay.hidden = false;
+    document.body.style.overflow = "hidden";
+    content.scrollTop = (!wasHidden && opts.keepScroll) ? scroll : 0;
+  }
+  function attachSheetDrag(handle, sheet){
+    var startY = null;
+    handle.addEventListener("pointerdown", function(e){
+      startY = e.clientY;
+      try { handle.setPointerCapture(e.pointerId); } catch(err){}
+      sheet.style.transition = "none";
+    });
+    handle.addEventListener("pointermove", function(e){
+      if (startY === null) return;
+      sheet.style.transform = "translateY(" + Math.max(0, e.clientY - startY) + "px)";
+    });
+    function end(e){
+      if (startY === null) return;
+      var dy = e.clientY - startY;
+      startY = null;
+      sheet.style.transition = "transform .2s ease";
+      if (dy > 110){
+        sheet.style.transform = "translateY(100%)";
+        setTimeout(function(){ sheet.style.transform = ""; sheet.style.transition = ""; closeModal(); }, 180);
+      } else {
+        sheet.style.transform = "";
+      }
+    }
+    handle.addEventListener("pointerup", end);
+    handle.addEventListener("pointercancel", end);
   }
   function closeModal(){
     document.getElementById("overlay").hidden = true;
+    document.body.style.overflow = "";
     modalOpenFor = null;
     // The section behind the modal was frozen while it was open (live updates
     // still landed in `state`, they just weren't drawn) — repaint now so the
@@ -1781,6 +2466,11 @@
   }
   document.getElementById("overlay").addEventListener("click", function(e){
     if (e.target.id === "overlay") closeModal();
+  });
+  document.addEventListener("keydown", function(e){
+    if (e.key !== "Escape") return;
+    if (!document.getElementById("overlay").hidden) closeModal();
+    else if (!document.getElementById("askPanel").hidden) document.getElementById("askPanel").hidden = true;
   });
 
   // ---------------------------------------------------------------
@@ -1791,6 +2481,7 @@
   // server-side from the database now — see api/ask.js.
   function openAsk(prefill){
     document.getElementById("askPanel").hidden = false;
+    renderAskBody();
     document.getElementById("askInput").value = prefill || "";
     document.getElementById("askInput").focus();
   }
