@@ -60,7 +60,7 @@ create table if not exists tasks (
   status           text not null default 'pending',        -- pending | done
   completed_at     timestamptz,
 
-  kind             text not null,                           -- scheduled | issue
+  kind             text not null,                           -- scheduled | issue | tip (added from a dashboard garden tip)
   reason           text not null default '',                -- e.g. "weekly checkin", "health tracking", free text
   severity         text not null default 'info',             -- info | warning
   year             int not null,

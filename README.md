@@ -65,6 +65,30 @@ the `/api/plants/:id` rewrite pattern. Current count: 9 Functions
 `task-detail`, `settings`, `ask`, `weather`, `cron/daily`) — 3 of
 headroom before hitting the cap again.
 
+## Phone-first UI & garden tips
+
+- **Layout**: on phones (≤640px) the section tabs become a bottom tab bar,
+  modals become bottom sheets (drag the handle down to dismiss), the Ask
+  panel goes full screen, and safe-area insets are respected. Touch devices
+  get 44px tap targets and 16px form text (so iOS doesn't zoom on focus).
+  `public/manifest.webmanifest` + `public/icons/` make it installable to the
+  home screen.
+- **Dashboard**: greeting hero (weather-tinted, with a week-progress ring
+  and a plain-language weather hint), a "Your garden" avatar row, garden
+  tips, This week grouped by day (swipe a row right to mark it done, with
+  Undo), and a weekly "Nice work" summary with a streak.
+- **Garden tips** (`public/js/tips.js`): a curated seasonal + weather tip
+  library, filtered by month (flipped for the southern hemisphere — see the
+  "Seasons for garden tips" setting, stored as `location.hemisphere`) and by
+  the plant types in the garden. "Add as task" creates a task with
+  `kind: "tip"` through `POST /api/tasks` — no new Function. "Not now" is
+  remembered per device in `localStorage`.
+- **Library**: photo-first cards with a growth level (Seedling → Sprout →
+  Bloom, from the knowledge score) and the plant's next task; search (6+
+  plants), filter chips, sort, and a grid / "By spot" shelves view. Plant
+  detail has a photo hero, a "next step" button, a growth journal and a
+  first-vs-latest photo comparison slider.
+
 ## What's ported vs. not
 
 The frontend (`public/`) is a full port of `garden-companion.html`: the CSS
