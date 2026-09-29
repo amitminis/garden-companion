@@ -97,6 +97,13 @@ headroom before hitting the cap again.
   missing. Both the wizard's build-card call and "Build / Update care
   guide" (`/research`) now send those details to the model
   (`lib/care-prompt.js`).
+- **My garden tiles**: each plant is a round tile — photo/emoji in a
+  circle, a ring that fills with the knowledge %, the level along the top
+  of the rim and what's next along the bottom (SVG `textPath`), on a
+  "garden bed" panel. Phone-style red count badges (`plantAlerts()`:
+  overdue tasks + a tracked problem + missing care-guide details) sit on
+  the tiles, the Home plant avatars, the plant page ("N things need
+  you" list with a fix button per item) and the Tasks / My garden tabs.
 - **Tasks screen** (4th tab; Home is the dashboard): every task with
   search, Open/Done/All, kind chips (mine, care guide, problems,
   check-ins, tips) and a plant filter, grouped Overdue / Today / This week
