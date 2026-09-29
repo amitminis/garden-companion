@@ -643,3 +643,55 @@
     .onboard-wrap{ align-items:flex-start; padding:max(20px, env(safe-area-inset-top)) 14px 32px; }
     .weather{ flex-wrap:wrap; }
   }
+
+  .link-btn{ background:none; border:none; padding:0; font:inherit; font-weight:600; color:var(--moss); cursor:pointer; }
+  .link-btn:hover{ text-decoration:underline; }
+
+  /* ---- care guide readiness ---- */
+  .ready-card{ border:1.5px dashed var(--line); border-radius:16px; padding:16px; background:var(--surface-sunk); }
+  .ready-card.is-ready{ border-style:solid; border-color:var(--moss); background:var(--moss-tint); }
+  .ready-head{ display:flex; gap:12px; align-items:flex-start; }
+  .ready-icon{ font-size:26px; line-height:1; flex:none; }
+  .ready-title{ font-family:"Fraunces",serif; font-weight:600; font-size:17px; }
+  .ready-sub{ font-size:13px; color:var(--ink-soft); margin-top:2px; }
+  .ready-meter-row{ display:flex; align-items:center; gap:10px; margin:14px 0 6px; }
+  .ready-meter{ flex:1; display:flex; gap:5px; }
+  .ready-meter span{ flex:1; height:8px; border-radius:4px; background:color-mix(in srgb, var(--ink) 12%, transparent); transition:background .3s ease; }
+  .ready-meter span.on{ background:var(--moss); }
+  .ready-count{ font-size:12.5px; font-weight:700; color:var(--ink-soft); flex:none; }
+  .ready-list{ display:flex; flex-direction:column; margin:6px 0 12px; }
+  .ready-item{
+    display:flex; align-items:center; gap:10px; width:100%; text-align:left; background:none; border:none; border-bottom:1px solid var(--line);
+    padding:10px 2px; min-height:48px; font:inherit; font-size:14px; color:var(--ink); cursor:pointer;
+  }
+  .ready-item:last-child{ border-bottom:none; }
+  .ready-check{
+    flex:none; width:24px; height:24px; border-radius:50%; border:2px dashed var(--ink-faint); display:flex; align-items:center; justify-content:center;
+  }
+  .ready-item.done .ready-check{ border:none; background:var(--moss); color:var(--moss-tint); }
+  .ready-check .icon{ width:15px; height:15px; }
+  .ready-label{ flex:1; min-width:0; font-weight:600; }
+  .ready-opt{ font-weight:400; color:var(--ink-faint); font-size:12.5px; }
+  .ready-value{ flex:none; max-width:45%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; color:var(--moss); font-weight:700; }
+  .ready-item.done .ready-value{ color:var(--ink-soft); font-weight:400; }
+  .ready-foot{ display:flex; flex-direction:column; align-items:stretch; gap:6px; }
+  .ready-note{ font-size:12.5px; color:var(--ink-soft); text-align:center; }
+  /* Locked: visibly unavailable (greyed, lock), but still tappable — a tap
+     jumps into answering what's missing instead of doing nothing. */
+  .btn-locked{ background:var(--surface-sunk); border:1.5px dashed var(--line); color:var(--ink-faint); cursor:pointer; }
+  .btn-locked:hover{ border-color:var(--ink-faint); }
+  .about-locked{
+    display:flex; flex-wrap:wrap; align-items:baseline; gap:6px; font-size:13.5px; color:var(--ink-soft);
+    background:var(--surface-sunk); border-radius:10px; padding:10px 12px; margin-bottom:16px;
+  }
+  .plant-next.locked{ color:var(--ink-faint); }
+
+  /* ---- quick answer option chips ---- */
+  .option-chips{ display:flex; flex-wrap:wrap; gap:8px; }
+  .option-chip{
+    border:1.5px solid var(--line); background:var(--surface); color:var(--ink); border-radius:100px; padding:10px 16px;
+    font:inherit; font-size:14.5px; font-weight:600; cursor:pointer; min-height:44px;
+  }
+  .option-chip:hover{ border-color:var(--moss); }
+  .option-chip.active{ background:var(--moss); border-color:var(--moss); color:var(--moss-tint); }
+  .option-chip:active{ transform:scale(.97); }
