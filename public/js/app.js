@@ -1195,9 +1195,16 @@
     // screen, which is "tasklist").
     var tabs = [["tasks","Home","home"], ["tasklist","Tasks","tasks"], ["library","My garden","seedling"], ["calendar","Calendar","calendar"]];
     var wrap = el("nav", {class:"tab-bar", "aria-label":"Sections"});
+    // App-icon style counts: overdue tasks on Tasks, plants that need
+    // something on My garden.
+    var today = todayISO();
+    var tabBadges = {
+      tasklist: state.tasks.filter(function(t){ return t.status !== "done" && t.dueDate && t.dueDate < today; }).length,
+      library: state.plants.filter(function(p){ return plantAlerts(p).count > 0; }).length
+    };
     tabs.forEach(function(t){
       var btn = el("button", {class:"tab-btn" + (state.section===t[0] ? " active" : ""), "aria-current": state.section===t[0] ? "page" : null}, [
-        el("span", {class:"icon", html:icon(t[2])}), t[1]
+        el("span", {class:"tab-icon"}, [el("span", {class:"icon", html:icon(t[2])}), countBadge(tabBadges[t[0]] || 0, "tab-badge")]), t[1]
       ]);
       btn.addEventListener("click", function(){
         if (state.section === t[0]) { window.scrollTo({top:0, behavior:"smooth"}); return; }
@@ -1321,7 +1328,11 @@
     var attn = p.healthStatus === "needs_attention";
     var av = el("span", {class:"avatar" + (attn ? " attn" : ""), style:"--av-bg:color-mix(in srgb, " + color + " 28%, var(--surface));"},
       [lastPhoto ? el("img", {src:lastPhoto.dataUrl, alt:""}) : typeEmoji(p.type)]);
-    var btn = el("button", {class:"avatar-btn", "aria-label": p.name + (attn ? " — needs attention" : "")}, [av, el("span", {class:"avatar-name"}, [p.name])]);
+    var n = plantAlerts(p).count;
+    var btn = el("button", {class:"avatar-btn", "aria-label": p.name + (n ? " — " + n + " need" + (n === 1 ? "s" : "") + " attention" : "")}, [
+      el("span", {class:"avatar-wrap"}, [av, countBadge(n, "av-badge")]),
+      el("span", {class:"avatar-name"}, [p.name])
+    ]);
     btn.addEventListener("click", function(){ openPlantDetail(p.id); });
     return btn;
   }
@@ -1339,8 +1350,7 @@
     var plants = state.plants.slice().sort(function(a,b){
       return (b.healthStatus === "needs_attention" ? 1 : 0) - (a.healthStatus === "needs_attention" ? 1 : 0);
     });
-    var attnCount = plants.filter(function(p){ return p.healthStatus === "needs_attention"; }).length;
-    var seeAll = el("button", {class:"link-btn"}, ["See all in My garden →"]);
+    var seeAll = el("button", {class:"link-btn"}, ["See all →"]);
     seeAll.addEventListener("click", function(){ state.section = "library"; renderShell(); window.scrollTo(0, 0); });
     var row = el("div", {class:"hscroll", "data-keep-scroll":"garden-row"});
     plants.forEach(function(p){ row.appendChild(plantAvatar(p)); });
@@ -1350,7 +1360,7 @@
     return el("section", {}, [
       el("div", {class:"section-title"}, [
         el("h2", {}, ["Your plants"]),
-        el("span", {class:"hint"}, [attnCount ? attnCount + " need" + (attnCount === 1 ? "s" : "") + " attention · " : "", seeAll])
+        el("span", {class:"hint"}, [seeAll])
       ]),
       row
     ]);
@@ -2120,7 +2130,8 @@
     // Filter chips: All, Needs attention (if any), then one per plant type present.
     var chips = el("div", {class:"filter-chips", role:"toolbar", "aria-label":"Filter plants"});
     var filters = [["all", "All"]];
-    if (state.plants.some(function(p){ return p.healthStatus === "needs_attention"; })) filters.push(["attn", "⚠︎ Needs care"]);
+    var needYou = state.plants.filter(function(p){ return plantAlerts(p).count > 0; }).length;
+    if (needYou) filters.push(["attn", "🔴 Needs you · " + needYou]);
     var typesPresent = [];
     state.plants.forEach(function(p){ var ty = p.type || "other"; if (typesPresent.indexOf(ty) === -1) typesPresent.push(ty); });
     if (typesPresent.length > 1) typesPresent.forEach(function(ty){ filters.push(["type:" + ty, typeEmoji(ty) + " " + ty.charAt(0).toUpperCase() + ty.slice(1)]); });
@@ -2153,7 +2164,7 @@
   function filteredSortedPlants(){
     var q = lib.q.trim().toLowerCase();
     var list = state.plants.filter(function(p){
-      if (lib.filter === "attn" && p.healthStatus !== "needs_attention") return false;
+      if (lib.filter === "attn" && !plantAlerts(p).count) return false;
       if (lib.filter.indexOf("type:") === 0 && (p.type || "other") !== lib.filter.slice(5)) return false;
       if (!q) return true;
       return [p.name, p.type, p.spot, p.species].some(function(v){ return v && String(v).toLowerCase().indexOf(q) !== -1; });
@@ -2189,7 +2200,7 @@
       order.sort(function(a,b){ return groups[b].length - groups[a].length || a.localeCompare(b); });
       order.forEach(function(spot){
         var row = el("div", {class:"hscroll", "data-keep-scroll":"shelf-" + spot});
-        groups[spot].forEach(function(p){ row.appendChild(plantCard(p)); });
+        groups[spot].forEach(function(p){ row.appendChild(roundPlantTile(p)); });
         container.appendChild(el("section", {class:"shelf"}, [
           el("div", {class:"shelf-head"}, [el("h3", {}, [spot]), el("span", {class:"hint"}, [groups[spot].length + (groups[spot].length === 1 ? " plant" : " plants")])]),
           row
@@ -2197,59 +2208,139 @@
       });
       return;
     }
-    var grid = el("div", {class:"plant-grid"});
-    list.forEach(function(p){ grid.appendChild(plantCard(p)); });
-    if (!lib.q && lib.filter === "all"){
-      var tile = el("button", {class:"add-tile"}, [el("span", {class:"plus"}, ["+"]), "Add a plant"]);
-      tile.addEventListener("click", openPlantWizard);
-      grid.appendChild(tile);
-    }
-    container.appendChild(grid);
+    var grid = el("div", {class:"round-grid"});
+    list.forEach(function(p){ grid.appendChild(roundPlantTile(p)); });
+    if (!lib.q && lib.filter === "all") grid.appendChild(addPlantTile());
+    container.appendChild(el("div", {class:"garden-bed"}, [grid]));
   }
 
-  // Photo (or a colored type-emoji placeholder) used by library cards and
-  // the plant detail hero.
+  // Photo (or a colored type-emoji placeholder) used by the round plant
+  // tiles and the plant detail hero.
   function plantPhotoEl(p){
     var lastPhoto = (p.photos && p.photos.length) ? p.photos[p.photos.length-1] : null;
     if (lastPhoto) return el("img", {src:lastPhoto.dataUrl, alt:p.name, loading:"lazy"});
     return el("div", {class:"plant-photo-ph", style:"--ph-color:" + plantColorFor(p.id) + ";", "aria-hidden":"true"}, [typeEmoji(p.type)]);
   }
 
-  function plantCard(p){
+  // ---- Plant notifications: what a plant needs from you right now, shown
+  // as a phone-style red count badge on its tile/avatar and as a list on
+  // its page. Counts: each overdue task, a tracked problem, and — until it
+  // has a care guide — each missing detail the guide needs. ----
+  function plantAlerts(p){
+    var items = [];
+    var today = todayISO();
+    var overdue = state.tasks.filter(function(t){ return t.plantId === p.id && t.status !== "done" && t.dueDate && t.dueDate < today; })
+      .sort(function(a,b){ return a.dueDate.localeCompare(b.dueDate); });
+    overdue.forEach(function(t){
+      items.push({key:"task", text:t.title, sub:relativeDay(t.dueDate), btn:"Open", fn:function(){ openTaskDetail(t.id, {allowComplete:true}); }});
+    });
+    if (p.healthStatus === "needs_attention"){
+      items.push({key:"issue", text:(p.activeIssue && p.activeIssue.description) || "A problem is being tracked", sub:"problem being tracked", btn:"See issue",
+        fn:function(){ plantDetailTab = "issues"; openPlantDetail(p.id, {keepTab:true}); }});
+    }
+    if (!(p.researched && p.careProfile)){
+      careReadiness(p).missing.forEach(function(m){
+        items.push({key:m.key, text:m.label, sub:"needed for its care guide", btn:"Add",
+          fn:function(){ openQuickAnswer(p, m.key); }});
+      });
+    }
+    return {count:items.length, overdue:overdue.length, items:items};
+  }
+  function countBadge(n, extraClass){
+    if (!n) return null;
+    return el("span", {class:"count-badge" + (extraClass ? " " + extraClass : ""), "aria-label": n + (n === 1 ? " notification" : " notifications")}, [n > 9 ? "9+" : String(n)]);
+  }
+
+  // The one-line status that goes on the bottom of a plant's rim:
+  // {text, tone} — tone "warn" (overdue), "lock" (guide locked) or "".
+  function plantRimStatus(p){
+    var next = nextTaskFor(p.id);
+    if (next){
+      var cat = taskCategory(next);
+      if (next.dueDate < todayISO()) return {text:"⚠ " + relativeDay(next.dueDate), tone:"warn"};
+      return {text:cat.emoji + " " + cat.key.replace("other","task") + " " + relativeDay(next.dueDate), tone:""};
+    }
+    if (!(p.researched && p.careProfile)){
+      var rd = careReadiness(p);
+      return rd.ready ? {text:"✨ ready for a guide", tone:""} : {text:"🔒 " + rd.missing.length + (rd.missing.length === 1 ? " detail" : " details") + " to go", tone:"lock"};
+    }
+    return {text:"✓ all caught up", tone:""};
+  }
+
+  // A round plant tile: the photo (or emoji) in a circle, a ring around it
+  // that fills with how well the app knows the plant, the level along the
+  // top of the rim and what's next along the bottom, and a red count badge
+  // for anything that needs you. The rim text follows the circle via SVG
+  // textPath (top arc drawn left→right over the top, bottom arc left→right
+  // under the bottom, so both read upright).
+  var rimSeq = 0;
+  function roundPlantTile(p){
     var k = plantKnowledge(p);
     var lvl = plantLevel(k.score);
-    var attn = p.healthStatus === "needs_attention";
-    var photo = el("div", {class:"plant-photo"}, [
-      plantPhotoEl(p),
-      el("div", {class:"card-badges"}, [
-        el("span", {class:"level-badge", title:gradeLabelFor(k.score)}, [lvl.emoji + " " + lvl.name + " · " + k.score + "%"]),
-        attn ? el("span", {class:"attn-badge"}, ["Needs care"]) : null
-      ]),
-      el("div", {class:"plant-overlay"}, [
-        el("div", {class:"plant-card-name"}, [p.name]),
-        el("div", {class:"plant-card-sub"}, [(p.type ? p.type.charAt(0).toUpperCase() + p.type.slice(1) : "Plant") + (p.spot ? " · " + p.spot : "")])
-      ])
+    var alerts = plantAlerts(p);
+    var status = plantRimStatus(p);
+    var id = "rim" + (++rimSeq);
+    var R = 68, C = 2 * Math.PI * R;
+    var ns = "http://www.w3.org/2000/svg";
+    var svg = document.createElementNS(ns, "svg");
+    svg.setAttribute("viewBox", "0 0 200 200");
+    svg.setAttribute("class", "rt-ring");
+    svg.setAttribute("aria-hidden", "true");
+    svg.innerHTML =
+      '<defs>' +
+        '<path id="' + id + 't" d="M 23,100 A 77,77 0 0 1 177,100"/>' +
+        '<path id="' + id + 'b" d="M 10,100 A 90,90 0 0 0 190,100"/>' +
+      '</defs>' +
+      '<circle class="rt-band" cx="100" cy="100" r="84"/>' +
+      '<circle class="rt-track" cx="100" cy="100" r="' + R + '"/>' +
+      '<circle class="rt-fill" cx="100" cy="100" r="' + R + '" stroke-dasharray="' + C.toFixed(1) + '" stroke-dashoffset="' + (C * (1 - k.score / 100)).toFixed(1) + '" transform="rotate(-90 100 100)"/>' +
+      '<text class="rt-text"><textPath href="#' + id + 't" startOffset="50%" text-anchor="middle"></textPath></text>' +
+      '<text class="rt-text rt-text-bottom' + (status.tone ? " " + status.tone : "") + '"><textPath href="#' + id + 'b" startOffset="50%" text-anchor="middle"></textPath></text>';
+    var paths = svg.querySelectorAll("textPath");
+    paths[0].textContent = lvl.emoji + " " + lvl.name.toUpperCase() + " · " + k.score + "%";
+    paths[1].textContent = status.text.toUpperCase();
+
+    var disc = el("span", {class:"rt-disc", style:"--ph-color:" + plantColorFor(p.id) + ";"}, [
+      el("span", {class:"rt-photo" + (p.healthStatus === "needs_attention" ? " attn" : "")}, [plantPhotoEl(p)]),
+      svg,
+      countBadge(alerts.count, "rt-badge")
     ]);
-    var next = nextTaskFor(p.id);
-    var nextLine;
-    if (next){
-      var overdue = next.dueDate < todayISO();
-      var when = relativeDay(next.dueDate);
-      nextLine = el("div", {class:"plant-next" + (overdue ? " overdue" : "")}, [
-        el("span", {"aria-hidden":"true"}, [taskCategory(next).emoji]),
-        el("span", {class:"plant-next-text"}, [el("b", {}, [when.charAt(0).toUpperCase() + when.slice(1) + ": "]), next.title])
-      ]);
-    } else if (!(p.researched && p.careProfile)){
-      var rd = careReadiness(p);
-      nextLine = rd.ready
-        ? el("div", {class:"plant-next"}, [el("span", {"aria-hidden":"true"}, ["✨"]), el("span", {class:"plant-next-text"}, [el("b", {}, ["Ready: "]), "build its care guide"])])
-        : el("div", {class:"plant-next locked"}, [el("span", {"aria-hidden":"true"}, ["🔒"]), el("span", {class:"plant-next-text"}, [el("b", {}, ["Care guide: "]), rd.missing.length + " detail" + (rd.missing.length === 1 ? "" : "s") + " to go"])]);
-    } else {
-      nextLine = el("div", {class:"plant-next"}, [el("span", {"aria-hidden":"true"}, ["✓"]), el("span", {class:"plant-next-text"}, ["All caught up"])]);
-    }
-    var card = el("button", {class:"plant-card", "aria-label": p.name + (attn ? " — needs attention" : "")}, [photo, nextLine]);
-    card.addEventListener("click", function(){ openPlantDetail(p.id); });
-    return card;
+    var label = p.name + ", " + lvl.name + " " + k.score + "%, " + status.text.replace(/^[^\w]+/, "") + (alerts.count ? ", " + alerts.count + " need" + (alerts.count === 1 ? "s" : "") + " attention" : "");
+    var tile = el("button", {class:"round-tile", "aria-label":label}, [
+      disc,
+      el("span", {class:"rt-name"}, [p.name]),
+      el("span", {class:"rt-sub"}, [(p.type ? p.type.charAt(0).toUpperCase() + p.type.slice(1) : "Plant") + (p.spot ? " · " + p.spot : "")])
+    ]);
+    tile.addEventListener("click", function(){ openPlantDetail(p.id); });
+    return tile;
+  }
+  function addPlantTile(){
+    var tile = el("button", {class:"round-tile add"}, [
+      el("span", {class:"rt-disc"}, [el("span", {class:"rt-photo rt-add"}, ["+"])]),
+      el("span", {class:"rt-name"}, ["Add a plant"]),
+      el("span", {class:"rt-sub"}, [" "])
+    ]);
+    tile.addEventListener("click", openPlantWizard);
+    return tile;
+  }
+
+  // The plant page's notification list (same items as its badge).
+  function plantAlertsBlock(p){
+    var a = plantAlerts(p);
+    if (!a.count) return null;
+    var box = el("div", {class:"alerts-block"}, [
+      el("div", {class:"alerts-head"}, [countBadge(a.count), el("span", {}, [a.count === 1 ? "1 thing needs you" : a.count + " things need you"])])
+    ]);
+    a.items.forEach(function(it){
+      var b = el("button", {class:"btn btn-sm"}, [it.btn]);
+      b.addEventListener("click", function(){ it.fn(); });
+      box.appendChild(el("div", {class:"alert-row"}, [
+        el("span", {class:"alert-dot", "aria-hidden":"true"}),
+        el("span", {class:"alert-text"}, [el("b", {}, [it.text]), it.sub ? el("span", {class:"alert-sub"}, [it.sub]) : null]),
+        b
+      ]));
+    });
+    return box;
   }
 
   function openSettings(){
@@ -2522,6 +2613,8 @@
       ]));
 
       container.appendChild(plantLevelBlock(p));
+      var alertsBlock = plantAlertsBlock(p);
+      if (alertsBlock) container.appendChild(alertsBlock);
 
       var issueCount = state.tasks.filter(function(t){ return t.plantId === p.id && t.kind === "issue"; }).length;
       var tabs = [
@@ -2554,9 +2647,11 @@
       el("div", {class:"grade-track"}, [el("div", {class:"grade-fill", style:"width:" + pk.score + "%;"})])
     ]);
     var block = el("div", {class:"level-block"}, [el("span", {class:"level-emoji", "aria-hidden":"true"}, [lvl.emoji]), main]);
-    var next = pk.missing[0];
+    // Care-guide details are already listed in the plant's notifications
+    // (plantAlertsBlock, right below) — don't repeat them here.
+    var next = pk.missing.filter(function(m){ return !m.unlocks; })[0];
     if (!next){
-      main.appendChild(el("div", {class:"level-next"}, ["I know this plant well — keep the photos coming!"]));
+      main.appendChild(el("div", {class:"level-next"}, [pk.missing.length ? "Fill in what's listed below to unlock its care guide." : "I know this plant well — keep the photos coming!"]));
       return block;
     }
     var stepLabel, stepFn;
