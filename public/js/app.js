@@ -493,8 +493,8 @@
     var card = el("div", {class:"onboard-card card"}, [
       progressDots(1, 3),
       el("div", {class:"onboard-step-label"}, ["Step 2 of 3"]),
-      el("h2", {}, ["Want to start building your plant library now?"]),
-      el("p", {class:"lead"}, ["I'll guide you through adding each plant with a short form — or you can skip this and do it anytime from the Library section."])
+      el("h2", {}, ["Want to start adding plants to your garden now?"]),
+      el("p", {class:"lead"}, ["I'll guide you through adding each plant with a short form — or you can skip this and do it anytime from the My garden section."])
     ]);
     var yesBtn = el("button", {class:"btn btn-primary"}, ["Yes, let's add plants"]);
     yesBtn.addEventListener("click", function(){ onboard.step=3; onboard.wiz=null; renderOnboarding(); });
@@ -522,7 +522,7 @@
       el("h2", {}, ["All set"]),
       el("p", {class:"lead"}, [onboard.addedAny
         ? "Your garden is saved — care guides and yearly schedules are ready for what you've added."
-        : "Your garden is set up. Add plants anytime from the Library section."])
+        : "Your garden is set up. Add plants anytime from the My garden section."])
     ]);
     var finishBtn = el("button", {class:"btn btn-primary"}, ["Go to my garden →"]);
     finishBtn.addEventListener("click", async function(){
@@ -558,7 +558,7 @@
     return {
       step: 0, name:"", type:"other", spot:"", species:"", notes:"",
       age:"", sunExposure:"", watering:"", groundType:"",
-      photos: [], plantId: null, building:false, buildError:"", result:null
+      photos: [], plantId: null, building:false, buildError:"", result:null, savedWithoutGuide:""
     };
   }
   function wizardFieldMeta(){
@@ -715,15 +715,52 @@
       card.appendChild(pw);
     }
 
+    // Same rule as the plant page: the care guide needs the spot details.
+    // Without them the plant is still saved, just without a guide yet.
+    var wizReady = careReadiness({spot:wiz.spot, plantDetails:{sunExposure:wiz.sunExposure, watering:wiz.watering, groundType:wiz.groundType}});
+    if (!wizReady.ready){
+      card.appendChild(el("div", {class:"about-locked", style:"margin-bottom:12px;"}, [
+        el("span", {"aria-hidden":"true"}, ["🔒"]),
+        el("span", {}, ["I'll need " + missingLabelList(wizReady.missing) + " before I can write its care guide. You can save it now and add those from its page later — or go back and fill them in."])
+      ]));
+    }
+
     if (wiz.buildError) card.appendChild(el("div", {class:"empty", style:"margin-bottom:8px;"}, [wiz.buildError]));
 
     var row = el("div", {class:"row", style:"justify-content:space-between;margin-top:6px;"});
     var backBtn = el("button", {class:"btn btn-ghost"}, ["← Back"]);
     backBtn.addEventListener("click", function(){ wiz.step--; opts.rerender(); });
-    var buildBtn = el("button", {class:"btn btn-primary"}, [wiz.building ? "Building…" : "Build my plant card →"]);
+    var buildBtn = el("button", {class:"btn btn-primary"}, [wiz.building ? (wizReady.ready ? "Building…" : "Saving…") : (wizReady.ready ? "Build my plant card →" : "Save plant →")]);
     buildBtn.disabled = wiz.building;
     buildBtn.addEventListener("click", async function(){
       wiz.building = true; wiz.buildError = ""; opts.rerender();
+      if (!wizReady.ready){
+        try {
+          var saved = wiz.plantId ? {id:wiz.plantId} : await api("/plants", {method:"POST", body:{
+            name: wiz.name, type: wiz.type||"other", spot: wiz.spot||"", species: wiz.species||"", notes: wiz.notes||""
+          }});
+          wiz.plantId = saved.id;
+          var answers = [["age",wiz.age],["sunExposure",wiz.sunExposure],["watering",wiz.watering],["groundType",wiz.groundType]].filter(function(a){ return a[1]; });
+          for (var ai=0; ai<answers.length; ai++){
+            saved = await api("/plants/" + wiz.plantId + "/details", {method:"POST", body:{key:answers[ai][0], rawText:answers[ai][1], clean:true}});
+          }
+          // Photos go through the normal photo pipeline (saved even if
+          // analysis isn't available).
+          for (var pi=0; pi<wiz.photos.length; pi++){
+            try { await api("/plants/" + wiz.plantId + "/photo", {method:"POST", body:{dataUrl:wiz.photos[pi], note:""}}); } catch(e){}
+          }
+          wiz.result = saved; wiz.savedWithoutGuide = missingLabelList(wizReady.missing);
+          wiz.building = false;
+          if (opts.onAdded) opts.onAdded();
+          wiz.step++;
+          opts.rerender();
+        } catch(e){
+          wiz.building = false;
+          wiz.buildError = "Couldn't save this plant — try again.";
+          opts.rerender();
+        }
+        return;
+      }
       try {
         var created = wiz.plantId ? {id:wiz.plantId} : await api("/plants", {method:"POST", body:{
           name: wiz.name, type: wiz.type||"other", spot: wiz.spot||"", species: wiz.species||"", notes: wiz.notes||""
@@ -759,7 +796,9 @@
     var plant = wiz.result || {};
     var ok = plant && plant.careProfile;
     card.appendChild(el("h2", {style:"font-size:18px;"}, [ok ? (wiz.name + "'s card is ready") : (wiz.name + " is saved")]));
-    if (ok){
+    if (wiz.savedWithoutGuide){
+      card.appendChild(el("p", {class:"lead"}, ["🔒 Its care guide unlocks once you add " + wiz.savedWithoutGuide + " — open " + wiz.name + " from My garden and tap “Care guide”."]));
+    } else if (ok){
       var cg = el("dl", {class:"care-grid", style:"margin-bottom:6px;"});
       [["soil","Soil"],["sun","Sun"],["watering","Watering"],["pruning","Pruning"]].forEach(function(f){
         if (plant.careProfile[f[0]]) cg.appendChild(el("div", {}, [el("dt",{},[f[1]]), el("dd",{},[plant.careProfile[f[0]]])]));
@@ -873,21 +912,231 @@
     } catch(e){ return false; }
   }
 
+  // ---- What we know about a plant ----
+  // A care guide is built for *this* plant, so it needs to know about its
+  // spot, not just its species. These four are required before "Build care
+  // guide" unlocks ("Not sure" counts as answered — the guide then falls
+  // back to general advice for that part). Species and a photo are
+  // optional extras that make it sharper.
+  var READINESS_FIELDS = [
+    {key:"spot",        label:"Where it's planted", todo:"tell me where it's planted", btn:"Add its spot"},
+    {key:"sunExposure", label:"Sun exposure",       todo:"add its sun exposure",       btn:"Add sun exposure"},
+    {key:"watering",    label:"How it's watered",   todo:"add how it's watered",       btn:"Add watering"},
+    {key:"groundType",  label:"Soil / ground",      todo:"add its soil type",          btn:"Add soil type"}
+  ];
+  function plantFieldValue(p, key){
+    if (key === "spot") return p.spot || "";
+    if (key === "species") return p.species || "";
+    var entry = detailEntryOf(p, key);
+    return entry ? (entry.display || entry.raw || "") : "";
+  }
+  function isNotSure(v){ return /^not sure/i.test(v || ""); }
+  function careReadiness(p){
+    var items = READINESS_FIELDS.map(function(f){
+      var v = plantFieldValue(p, f.key);
+      return {key:f.key, label:f.label, todo:f.todo, btn:f.btn, value:v, done:!!v};
+    });
+    var missing = items.filter(function(i){ return !i.done; });
+    return {items:items, missing:missing, done:items.length - missing.length, total:items.length, ready:missing.length === 0};
+  }
+  // "sun exposure and soil / ground" — readable list of missing labels.
+  function missingLabelList(missing){
+    var names = missing.map(function(m){ return m.label.charAt(0).toLowerCase() + m.label.slice(1); });
+    if (names.length <= 1) return names.join("");
+    return names.slice(0, -1).join(", ") + " and " + names[names.length-1];
+  }
+
+  // How well the app knows a plant, 0–100 — driven by what the gardener has
+  // actually told it: the four spot details + age (10 each, 5 for "Not
+  // sure"), species (5), a care guide (25), a photo (15) and a recent photo
+  // (5). `missing` lists what would raise it, most useful first: the
+  // details that unlock the care guide, then the guide itself, then photos,
+  // age and species.
   function plantKnowledge(p){
-    var reasons = [];
-    var score = 0;
-    if (p.researched && p.careProfile) score += 25; else reasons.push("care guide not researched yet");
+    var score = 0, missing = [];
+    var readiness = careReadiness(p);
+    readiness.items.forEach(function(i){
+      if (!i.done) missing.push({key:i.key, text:i.todo, btn:i.btn, unlocks:true});
+      else score += isNotSure(i.value) ? 5 : 10;
+    });
+    var hasGuide = !!(p.researched && p.careProfile);
+    if (hasGuide) score += 25;
+    else if (readiness.ready) missing.push({key:"guide", text:"build its care guide"});
     var photos = p.photos || [];
-    if (photos.length > 0) score += 20; else reasons.push("no photo yet");
-    if (photos.length > 0){
+    if (photos.length){
+      score += 15;
       var days = (Date.now() - new Date(photos[photos.length-1].date).getTime()) / 86400000;
-      if (days <= 28) score += 20; else reasons.push("photo update overdue");
-    } else reasons.push("photo update overdue");
-    if (p.sizeInfo) score += 15; else reasons.push("size/age unknown");
-    if (p.healthStatus !== "needs_attention") score += 20; else reasons.push("active issue being tracked");
-    return {score:score, reasons:reasons};
+      if (days <= 28) score += 5;
+    } else missing.push({key:"photo", text:"add a photo"});
+    var age = plantFieldValue(p, "age");
+    if (age) score += isNotSure(age) ? 5 : 10; else missing.push({key:"age", text:"add its age"});
+    if (p.species) score += 5; else missing.push({key:"species", text:"add its species or variety"});
+    if (photos.length && days > 28) missing.push({key:"photo", text:"add a fresh photo"});
+    return {score:Math.min(100, score), missing:missing, reasons:missing.map(function(m){ return m.text; })};
   }
   function gradeLabelFor(score){ return score>=80 ? "Well known" : (score>=50 ? "Getting there" : "Still learning"); }
+
+  // ---- Quick answer: one question, answered by tapping an option chip
+  // (or "Other…" for free text). Used by the care-guide checklist, the
+  // level "next step" and the profile's Add/Edit buttons. opts.chain walks
+  // through every still-missing care-guide detail in a row. ----
+  var QUICK_FIELDS = {
+    spot:        {q:"Where in the garden is it?", options:function(){ return SPOT_OPTIONS; }, other:"Describe the spot"},
+    sunExposure: {q:"How much sun does that spot get?", options:function(){ return SUN_OPTIONS; }, other:"e.g. morning sun, shade after 2pm"},
+    watering:    {q:"How do you water it?", options:function(){ return WATERING_OPTIONS; }, other:"e.g. drip twice a week"},
+    groundType:  {q:"What's the ground like there?", options:function(){ return GROUND_OPTIONS; }, other:"e.g. rocky clay, mulched"},
+    age:         {q:"About how old is it?", options:function(){ return AGE_OPTIONS; }, other:"e.g. planted spring 2021"},
+    species:     {q:"What species or variety is it?", options:null, other:"e.g. Hass avocado, Citrus × meyeri"}
+  };
+  async function saveQuickAnswer(p, key, value, fromOption){
+    if (key === "spot" || key === "species"){
+      var patch = {}; patch[key] = value;
+      await api("/plants/" + p.id, {method:"PATCH", body:patch});
+    } else {
+      await api("/plants/" + p.id + "/details", {method:"POST", body:{key:key, rawText:value, clean:!!fromOption}});
+    }
+    await loadGardenData();
+    return state.plants.find(function(x){ return x.id === p.id; }) || p;
+  }
+  function openQuickAnswer(p, key, opts){
+    opts = opts || {};
+    var field = QUICK_FIELDS[key];
+    if (!field) return;
+    var current = plantFieldValue(p, key);
+    showModal(function(container){
+      container.appendChild(el("div", {class:"modal-head"}, [
+        el("h3", {style:"font-size:17px;"}, [p.name]),
+        el("button", {class:"modal-close", "aria-label":"Close", onclick:closeModal}, ["×"])
+      ]));
+      var backBtn = el("button", {class:"btn btn-ghost btn-sm", style:"margin-bottom:10px;"}, ["← Back to plant"]);
+      backBtn.addEventListener("click", function(){ openPlantDetail(p.id, {keepTab:true}); });
+      container.appendChild(backBtn);
+      if (opts.chain && opts.chainTotal > 1){
+        container.appendChild(el("div", {class:"onboard-step-label"}, ["Care guide details · " + opts.chainIndex + " of " + opts.chainTotal]));
+      }
+      container.appendChild(el("h2", {style:"font-size:19px;margin:2px 0 14px;"}, [field.q]));
+      var status = el("div", {class:"thinking", style:"min-height:20px;margin-top:8px;"});
+
+      async function commit(value, fromOption){
+        value = String(value || "").trim();
+        if (!value) return;
+        container.querySelectorAll("button, input").forEach(function(b){ b.disabled = true; });
+        status.textContent = "Saving…";
+        var fresh;
+        try { fresh = await saveQuickAnswer(p, key, value, fromOption); }
+        catch(e){
+          container.querySelectorAll("button, input").forEach(function(b){ b.disabled = false; });
+          status.textContent = "Couldn't save — try again.";
+          return;
+        }
+        buzz();
+        if (opts.chain){
+          var next = careReadiness(fresh).missing[0];
+          if (next){ openQuickAnswer(fresh, next.key, {chain:true, chainIndex:(opts.chainIndex||1) + 1, chainTotal:opts.chainTotal}); return; }
+        }
+        var r = careReadiness(fresh);
+        if (r.ready && !(fresh.researched && fresh.careProfile) && READINESS_FIELDS.some(function(f){ return f.key === key; })){
+          plantDetailTab = "care";
+          showToast("✨ Care guide unlocked — ready to build!");
+        } else {
+          showToast("Saved");
+        }
+        openPlantDetail(fresh.id, {keepTab:true});
+      }
+
+      var otherInput = el("input", {type:"text", placeholder:field.other, value: current && (!field.options || field.options().indexOf(current) === -1) ? current : ""});
+      var otherSave = el("button", {class:"btn btn-primary"}, ["Save"]);
+      otherSave.addEventListener("click", function(){ commit(otherInput.value, false); });
+      otherInput.addEventListener("keydown", function(e){ if (e.key === "Enter"){ e.preventDefault(); commit(otherInput.value, false); } });
+      var otherRow = el("div", {class:"row", style:"gap:8px;flex-wrap:nowrap;margin-top:12px;"}, [el("div", {style:"flex:1;"}, [otherInput]), otherSave]);
+
+      if (field.options){
+        var chips = el("div", {class:"option-chips"});
+        field.options().forEach(function(o){
+          var chip = el("button", {class:"option-chip" + (o === current ? " active" : "")}, [o]);
+          chip.addEventListener("click", function(){ commit(o, true); });
+          chips.appendChild(chip);
+        });
+        var otherChip = el("button", {class:"option-chip" + (otherInput.value ? " active" : "")}, ["Other…"]);
+        otherChip.addEventListener("click", function(){ otherRow.hidden = false; otherInput.focus(); });
+        chips.appendChild(otherChip);
+        container.appendChild(chips);
+        otherRow.hidden = !otherInput.value;
+      }
+      container.appendChild(otherRow);
+      container.appendChild(status);
+      if (!field.options) setTimeout(function(){ otherInput.focus(); }, 50);
+    });
+  }
+
+  // ---- The care-guide readiness card: a 4-step meter, a checklist of what
+  // the guide needs (tap any row to fill it in), and the Build button —
+  // locked and greyed until all four are answered, with a line saying
+  // exactly what's still missing. ----
+  function careReadinessCard(p){
+    var r = careReadiness(p);
+    var card = el("div", {class:"ready-card" + (r.ready ? " is-ready" : "")});
+    card.appendChild(el("div", {class:"ready-head"}, [
+      el("span", {class:"ready-icon", "aria-hidden":"true"}, [r.ready ? "✨" : "🔒"]),
+      el("div", {}, [
+        el("div", {class:"ready-title"}, [r.ready ? "Ready for a care guide" : "Care guide locked"]),
+        el("div", {class:"ready-sub"}, [r.ready
+          ? "I know enough about its spot to write a guide for your garden, not just the species."
+          : "A good guide depends on where it grows. Tell me " + r.missing.length + " more thing" + (r.missing.length === 1 ? "" : "s") + " to unlock it."])
+      ])
+    ]));
+    var meter = el("div", {class:"ready-meter", role:"img", "aria-label": r.done + " of " + r.total + " details added"});
+    r.items.forEach(function(i){ meter.appendChild(el("span", {class:i.done ? "on" : ""})); });
+    card.appendChild(el("div", {class:"ready-meter-row"}, [meter, el("span", {class:"ready-count"}, [r.done + " of " + r.total])]));
+
+    var list = el("div", {class:"ready-list"});
+    function row(item, optional){
+      var b = el("button", {class:"ready-item" + (item.done ? " done" : "")}, [
+        el("span", {class:"ready-check", "aria-hidden":"true", html: item.done ? icon("check") : ""}),
+        el("span", {class:"ready-label"}, [item.label, optional ? el("span", {class:"ready-opt"}, [" · optional"]) : null]),
+        el("span", {class:"ready-value"}, [item.done ? item.value : (optional ? "Add" : "Add →")])
+      ]);
+      b.addEventListener("click", function(){
+        if (item.key === "photo"){ plantDetailTab = "overview"; openPlantDetail(p.id, {keepTab:true}); var inp = document.querySelector("#modalContent .overview-photo-input"); if (inp) inp.click(); }
+        else openQuickAnswer(p, item.key);
+      });
+      list.appendChild(b);
+    }
+    r.items.forEach(function(i){ row(i, false); });
+    row({key:"species", label:"Species or variety", value:p.species || "", done:!!p.species}, true);
+    var nPhotos = (p.photos || []).length;
+    row({key:"photo", label:"A photo", value: nPhotos ? nPhotos + (nPhotos === 1 ? " photo" : " photos") : "", done: nPhotos > 0}, true);
+    card.appendChild(list);
+
+    var buildBtn = el("button", {class:"btn " + (r.ready ? "btn-primary" : "btn-locked"), "aria-label": r.ready ? null : "Build care guide — locked. Add " + missingLabelList(r.missing) + " first."}, [r.ready ? "✨ Build care guide" : "🔒 Build care guide"]);
+    var note = el("div", {class:"ready-note"}, [r.ready ? "Takes about half a minute." : "Add " + missingLabelList(r.missing) + " to unlock."]);
+    buildBtn.addEventListener("click", async function(){
+      if (!r.ready){
+        // Locked: jump straight into filling what's missing.
+        openQuickAnswer(p, r.missing[0].key, {chain:true, chainIndex:1, chainTotal:r.missing.length});
+        return;
+      }
+      buildBtn.disabled = true; buildBtn.textContent = "Building…";
+      note.textContent = "Writing a guide for " + p.name + "…";
+      var ok = await researchPlant(p.id);
+      if (ok){
+        await loadGardenData();
+        buzz(15); showToast("🌿 Care guide ready for " + p.name);
+        plantDetailTab = "care";
+        openPlantDetail(p.id, {keepTab:true});
+      } else {
+        buildBtn.disabled = false; buildBtn.textContent = "✨ Build care guide";
+        note.textContent = "Couldn't build it just now — try again in a moment.";
+      }
+    });
+    card.appendChild(el("div", {class:"ready-foot"}, [buildBtn, note]));
+    if (r.missing.length > 1){
+      var fill = el("button", {class:"link-btn", style:"margin-top:8px;"}, ["Answer the " + r.missing.length + " missing questions →"]);
+      fill.addEventListener("click", function(){ openQuickAnswer(p, r.missing[0].key, {chain:true, chainIndex:1, chainTotal:r.missing.length}); });
+      card.appendChild(fill);
+    }
+    return card;
+  }
 
   // ---------------------------------------------------------------
   // DASHBOARD
@@ -938,7 +1187,7 @@
   }
 
   function sectionTabBar(){
-    var tabs = [["tasks","Tasks","tasks"], ["library","Library","library"], ["calendar","Calendar","calendar"]];
+    var tabs = [["tasks","Tasks","tasks"], ["library","My garden","seedling"], ["calendar","Calendar","calendar"]];
     var wrap = el("nav", {class:"tab-bar", "aria-label":"Sections"});
     tabs.forEach(function(t){
       var btn = el("button", {class:"tab-btn" + (state.section===t[0] ? " active" : ""), "aria-current": state.section===t[0] ? "page" : null}, [
@@ -1058,7 +1307,7 @@
     return hero;
   }
 
-  // ---- "Your garden": a row of plant avatars, the ones needing attention
+  // ---- "Your plants": a row of plant avatars, the ones needing attention
   // first (with a pulsing ring). Tap one to open it. ----
   function plantAvatar(p){
     var lastPhoto = (p.photos && p.photos.length) ? p.photos[p.photos.length-1] : null;
@@ -1085,13 +1334,18 @@
       return (b.healthStatus === "needs_attention" ? 1 : 0) - (a.healthStatus === "needs_attention" ? 1 : 0);
     });
     var attnCount = plants.filter(function(p){ return p.healthStatus === "needs_attention"; }).length;
+    var seeAll = el("button", {class:"link-btn"}, ["See all in My garden →"]);
+    seeAll.addEventListener("click", function(){ state.section = "library"; renderShell(); window.scrollTo(0, 0); });
     var row = el("div", {class:"hscroll", "data-keep-scroll":"garden-row"});
     plants.forEach(function(p){ row.appendChild(plantAvatar(p)); });
     var add = el("button", {class:"avatar-btn", "aria-label":"Add a plant"}, [el("span", {class:"avatar add"}, ["+"]), el("span", {class:"avatar-name"}, ["Add"])]);
     add.addEventListener("click", openPlantWizard);
     row.appendChild(add);
     return el("section", {}, [
-      el("div", {class:"section-title"}, [el("h2", {}, ["Your garden"]), el("span", {class:"hint"}, [attnCount ? attnCount + " need" + (attnCount === 1 ? "s" : "") + " attention" : "all looking good"])]),
+      el("div", {class:"section-title"}, [
+        el("h2", {}, ["Your plants"]),
+        el("span", {class:"hint"}, [attnCount ? attnCount + " need" + (attnCount === 1 ? "s" : "") + " attention · " : "", seeAll])
+      ]),
       row
     ]);
   }
@@ -1534,10 +1788,10 @@
     if (state.plants.length === 0){
       var sec = el("div", {class:"card empty-fun"}, [
         el("span", {class:"big"}, ["🪴"]),
-        el("h2", {style:"font-size:20px;margin-bottom:6px;"}, ["Your library is empty"]),
+        el("h2", {style:"font-size:20px;margin-bottom:6px;"}, ["Your garden is empty"]),
         el("p", {style:"margin:0 0 14px;"}, ["Add your first plant and I'll build a care guide and a yearly schedule for it."])
       ]);
-      var ctaBtn = el("button", {class:"btn btn-primary"}, ["+ Start building your plant library"]);
+      var ctaBtn = el("button", {class:"btn btn-primary"}, ["+ Add your first plant"]);
       ctaBtn.addEventListener("click", openPlantWizard);
       sec.appendChild(ctaBtn);
       wrap.appendChild(sec);
@@ -1548,7 +1802,7 @@
     addBtn.addEventListener("click", openPlantWizard);
     var head = el("div", {class:"section-title", style:"margin-top:4px;align-items:center;"}, [
       el("div", {}, [
-        el("h2", {}, ["Your library"]),
+        el("h2", {}, ["My garden"]),
         el("div", {class:"hint"}, [state.plants.length + (state.plants.length === 1 ? " plant" : " plants")])
       ]),
       addBtn
@@ -1669,7 +1923,7 @@
     var photo = el("div", {class:"plant-photo"}, [
       plantPhotoEl(p),
       el("div", {class:"card-badges"}, [
-        el("span", {class:"level-badge", title:gradeLabelFor(k.score) + " · " + k.score + "%"}, [lvl.emoji + " " + lvl.name]),
+        el("span", {class:"level-badge", title:gradeLabelFor(k.score)}, [lvl.emoji + " " + lvl.name + " · " + k.score + "%"]),
         attn ? el("span", {class:"attn-badge"}, ["Needs care"]) : null
       ]),
       el("div", {class:"plant-overlay"}, [
@@ -1686,8 +1940,11 @@
         el("span", {"aria-hidden":"true"}, [taskCategory(next).emoji]),
         el("span", {class:"plant-next-text"}, [el("b", {}, [when.charAt(0).toUpperCase() + when.slice(1) + ": "]), next.title])
       ]);
-    } else if (!p.researched){
-      nextLine = el("div", {class:"plant-next"}, [el("span", {"aria-hidden":"true"}, ["⏳"]), el("span", {class:"plant-next-text"}, ["Building its care guide…"])]);
+    } else if (!(p.researched && p.careProfile)){
+      var rd = careReadiness(p);
+      nextLine = rd.ready
+        ? el("div", {class:"plant-next"}, [el("span", {"aria-hidden":"true"}, ["✨"]), el("span", {class:"plant-next-text"}, [el("b", {}, ["Ready: "]), "build its care guide"])])
+        : el("div", {class:"plant-next locked"}, [el("span", {"aria-hidden":"true"}, ["🔒"]), el("span", {class:"plant-next-text"}, [el("b", {}, ["Care guide: "]), rd.missing.length + " detail" + (rd.missing.length === 1 ? "" : "s") + " to go"])]);
     } else {
       nextLine = el("div", {class:"plant-next"}, [el("span", {"aria-hidden":"true"}, ["✓"]), el("span", {class:"plant-next-text"}, ["All caught up"])]);
     }
@@ -1998,33 +2255,32 @@
       el("div", {class:"grade-track"}, [el("div", {class:"grade-fill", style:"width:" + pk.score + "%;"})])
     ]);
     var block = el("div", {class:"level-block"}, [el("span", {class:"level-emoji", "aria-hidden":"true"}, [lvl.emoji]), main]);
-    var reason = pk.reasons[0];
-    if (!reason){
+    var next = pk.missing[0];
+    if (!next){
       main.appendChild(el("div", {class:"level-next"}, ["I know this plant well — keep the photos coming!"]));
       return block;
     }
-    var step;
-    if (/care guide/.test(reason)) step = ["Research its care guide", function(btn){
-      btn.disabled = true; btn.textContent = "Researching…";
-      researchPlant(p.id).then(async function(ok){
-        if (ok){ await loadGardenData(); openPlantDetail(p.id, {keepTab:true}); }
-        else { btn.disabled = false; btn.textContent = "Couldn't research — try again"; }
-      });
-    }];
-    else if (/photo|size/.test(reason)) step = [/overdue/.test(reason) && p.photos && p.photos.length ? "Add a fresh photo" : "Add a photo", function(){
-      // The photo picker lives on the Overview tab — open it there. Still
-      // inside this click, so the browser allows opening the file picker.
-      if (plantDetailTab !== "overview"){ plantDetailTab = "overview"; openPlantDetail(p.id, {keepTab:true, keepScroll:true}); }
-      var input = document.querySelector("#modalContent .overview-photo-input");
-      if (input) input.click();
-    }];
-    else if (/issue/.test(reason)) step = ["See the issue", function(){ plantDetailTab = "issues"; openPlantDetail(p.id, {keepTab:true, keepScroll:true}); }];
-    main.appendChild(el("div", {class:"level-next"}, ["Next step: " + reason + "."]));
-    if (step){
-      var btn = el("button", {class:"btn btn-sm level-btn"}, [step[0]]);
-      btn.addEventListener("click", function(){ step[1](btn); });
-      block.appendChild(btn);
+    var stepLabel, stepFn;
+    if (next.key === "guide"){
+      stepLabel = "✨ Build care guide";
+      stepFn = function(){ plantDetailTab = "care"; openPlantDetail(p.id, {keepTab:true, keepScroll:true}); };
+    } else if (next.key === "photo"){
+      stepLabel = next.text.charAt(0).toUpperCase() + next.text.slice(1);
+      stepFn = function(){
+        // The photo picker lives on the Overview tab — open it there. Still
+        // inside this click, so the browser allows opening the file picker.
+        if (plantDetailTab !== "overview"){ plantDetailTab = "overview"; openPlantDetail(p.id, {keepTab:true, keepScroll:true}); }
+        var input = document.querySelector("#modalContent .overview-photo-input");
+        if (input) input.click();
+      };
+    } else {
+      stepLabel = next.btn || ({age:"Add its age", species:"Add species"})[next.key] || "Add";
+      stepFn = function(){ openQuickAnswer(p, next.key); };
     }
+    main.appendChild(el("div", {class:"level-next"}, ["Next step: " + next.text + (next.unlocks ? " — it helps unlock the care guide." : ".")]));
+    var btn = el("button", {class:"btn btn-sm level-btn"}, [stepLabel]);
+    btn.addEventListener("click", function(){ stepFn(btn); });
+    block.appendChild(btn);
     return block;
   }
 
@@ -2093,7 +2349,14 @@
       aboutRow.appendChild(readMoreBtn);
       container.appendChild(aboutRow);
     } else {
-      container.appendChild(el("div", {class:"empty", style:"margin-bottom:16px;"}, ["Care guide not ready yet — this happens automatically moments after a plant is added."]));
+      var rd = careReadiness(p);
+      var goCare = el("button", {class:"link-btn"}, [rd.ready ? "Build it now →" : "See what's needed →"]);
+      goCare.addEventListener("click", function(){ plantDetailTab = "care"; openPlantDetail(p.id, {keepTab:true, keepScroll:true}); });
+      container.appendChild(el("div", {class:"about-locked"}, [
+        el("span", {"aria-hidden":"true"}, [rd.ready ? "✨" : "🔒"]),
+        el("span", {}, [rd.ready ? "No care guide yet — it's ready to build. " : "No care guide yet — needs " + missingLabelList(rd.missing) + ". "]),
+        goCare
+      ]));
     }
 
     container.appendChild(el("div", {class:"section-head", style:"margin-bottom:8px;"}, [
@@ -2157,6 +2420,17 @@
       ]);
       detailsList.appendChild(sizeRow);
     }
+    [["spot","Spot"],["species","Species"]].forEach(function(f){
+      var v = plantFieldValue(p, f[0]);
+      var r = el("div", {class:"detail-row"}, [
+        v ? el("div", {style:"font-size:13px;"}, [el("span", {style:"color:var(--ink-faint);"}, [f[1] + " "]), v])
+          : el("div", {style:"font-size:13px;color:var(--ink-faint);"}, [f[1] + " — not set"])
+      ]);
+      var b = el("button", {class:"btn btn-ghost btn-sm"}, [v ? "Edit" : "Add"]);
+      b.addEventListener("click", function(){ openQuickAnswer(p, f[0]); });
+      r.appendChild(b);
+      detailsList.appendChild(r);
+    });
     GET_TO_KNOW_QUESTIONS.forEach(function(q, qi){
       var entry = detailEntryOf(p, q.key);
       var detailRow = el("div", {class:"detail-row"});
@@ -2165,7 +2439,10 @@
         : el("div", {style:"font-size:13px;color:var(--ink-faint);"}, [q.shortLabel + " — not set"]);
       detailRow.appendChild(textPart);
       var detailBtn = el("button", {class:"btn btn-ghost btn-sm"}, [entry ? "Edit" : "Add"]);
-      detailBtn.addEventListener("click", function(){ openGetToKnowPlant(p, {onlyIndex: qi}); });
+      detailBtn.addEventListener("click", function(){
+        if (QUICK_FIELDS[q.key]) openQuickAnswer(p, q.key);
+        else openGetToKnowPlant(p, {onlyIndex: qi});
+      });
       detailRow.appendChild(detailBtn);
       detailsList.appendChild(detailRow);
     });
@@ -2187,24 +2464,26 @@
   // action that overwrites it (moved here from Overview in v13, since it's
   // an action on exactly the data shown on this tab). ----
   function buildPlantCareTab(container, p){
+    // No guide yet: the readiness checklist, with Build locked until the
+    // plant's spot details are in.
+    if (!p.careProfile){
+      container.appendChild(careReadinessCard(p));
+      return;
+    }
     container.appendChild(el("div", {class:"section-head", style:"margin-bottom:8px;"}, [
       el("h3", {style:"font-size:15px;"}, ["Care guide"]),
-      el("span", {class:"hint"}, ["what this kind of plant needs"])
+      el("span", {class:"hint"}, ["for this plant, in its spot"])
     ]));
-    if (p.careProfile){
-      var cg = el("dl", {class:"care-grid"});
-      var fields = [["soil","Soil / ground"],["sun","Sunlight"],["watering","Watering"],["nutrients","Nutrients"],["pruning","Pruning"],["frostSensitive","Frost sensitivity"],["commonIssues","Watch for"]];
-      fields.forEach(function(f){
-        if (p.careProfile[f[0]]) cg.appendChild(el("div", {}, [el("dt",{},[f[1]]), el("dd",{},[p.careProfile[f[0]]])]));
-      });
-      container.appendChild(cg);
-    } else {
-      container.appendChild(el("div", {class:"empty", style:"margin-bottom:10px;"}, ["Not researched yet — this happens automatically moments after a plant is added."]));
-    }
-    var researchBtn = el("button", {class:"btn btn-sm btn-ghost", style:"margin-top:8px;"}, [p.careProfile ? "Update research" : "Research now"]);
-    researchBtn.title = "Re-runs species research and overwrites this guide. Won't touch this plant's own profile (photo/details/health).";
+    var cg = el("dl", {class:"care-grid"});
+    var fields = [["soil","Soil / ground"],["sun","Sunlight"],["watering","Watering"],["nutrients","Nutrients"],["pruning","Pruning"],["frostSensitive","Frost sensitivity"],["commonIssues","Watch for"]];
+    fields.forEach(function(f){
+      if (p.careProfile[f[0]]) cg.appendChild(el("div", {}, [el("dt",{},[f[1]]), el("dd",{},[p.careProfile[f[0]]])]));
+    });
+    container.appendChild(cg);
+    var researchBtn = el("button", {class:"btn btn-sm btn-ghost", style:"margin-top:8px;"}, ["Update care guide"]);
+    researchBtn.title = "Rebuilds this guide from the species plus what you've told me about its spot. Won't touch its photos, details or health.";
     researchBtn.addEventListener("click", async function(){
-      researchBtn.disabled = true; researchBtn.textContent = "Researching…";
+      researchBtn.disabled = true; researchBtn.textContent = "Updating…";
       var ok = await researchPlant(p.id);
       if (ok){
         // Refresh everything (this plant, the grade bar, the yearly schedule
@@ -2213,7 +2492,7 @@
         await loadGardenData();
         openPlantDetail(p.id, {keepTab:true});
       } else {
-        researchBtn.textContent = "Couldn't research — try again";
+        researchBtn.textContent = "Couldn't update — try again";
         researchBtn.disabled = false;
       }
     });

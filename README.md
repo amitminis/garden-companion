@@ -83,11 +83,22 @@ headroom before hitting the cap again.
   the plant types in the garden. "Add as task" creates a task with
   `kind: "tip"` through `POST /api/tasks` — no new Function. "Not now" is
   remembered per device in `localStorage`.
-- **Library**: photo-first cards with a growth level (Seedling → Sprout →
+- **My garden** (the plant library tab): photo-first cards with a growth level (Seedling → Sprout →
   Bloom, from the knowledge score) and the plant's next task; search (6+
   plants), filter chips, sort, and a grid / "By spot" shelves view. Plant
   detail has a photo hero, a "next step" button, a growth journal and a
   first-vs-latest photo comparison slider.
+- **Care guide readiness**: a care guide needs the plant's spot — where
+  it's planted, sun exposure, watering and soil ("Not sure" counts as an
+  answer). Until those four are in, the Care guide tab shows a checklist
+  with a 4-step meter and a locked (greyed, 🔒) Build button that says
+  what's missing; tapping it walks through the missing questions as
+  tap-an-option chips. The wizard saves a plant without a guide when they're
+  missing. Both the wizard's build-card call and "Build / Update care
+  guide" (`/research`) now send those details to the model
+  (`lib/care-prompt.js`).
+- **Knowledge score** (the level %): spot/sun/watering/soil/age 10 each (5
+  for "Not sure"), species 5, care guide 25, a photo 15, a recent photo 5.
 
 ## What's ported vs. not
 
