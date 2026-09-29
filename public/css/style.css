@@ -114,7 +114,7 @@
   .btn-sm{ padding:6px 11px; font-size:13px; border-radius:7px; }
   .btn[disabled]{ opacity:.5; cursor:default; }
 
-  input[type=text], input[type=date], textarea, select{
+  input[type=text], input[type=date], input[type=search], textarea, select{
     width:100%; font-family:inherit; font-size:14px; color:var(--ink); background:var(--surface);
     border:1px solid var(--line); border-radius:8px; padding:10px 12px;
   }
@@ -695,3 +695,22 @@
   .option-chip:hover{ border-color:var(--moss); }
   .option-chip.active{ background:var(--moss); border-color:var(--moss); color:var(--moss-tint); }
   .option-chip:active{ transform:scale(.97); }
+
+  /* ---- all-tips sheet ---- */
+  .tips-list{ display:flex; flex-direction:column; gap:12px; }
+  .tip-card-list{ width:auto; box-shadow:none; }
+  .tip-card.is-hidden{ opacity:.78; }
+  .month-chips{ margin:0 -2px; padding:2px 2px 4px; }
+
+  /* ---- task form / manage ---- */
+  .check-row{ display:flex; align-items:center; gap:10px; font-size:14px; font-weight:500; color:var(--ink); min-height:44px; cursor:pointer; margin:0; letter-spacing:0; }
+  .check-row input{ width:20px; height:20px; accent-color:var(--moss); flex:none; }
+  .task-manage-row{ justify-content:space-between; margin-top:16px; padding-top:12px; border-top:1px solid var(--line); }
+  .danger-btn{ color:var(--crit); display:inline-flex; align-items:center; gap:4px; }
+  .danger-btn .icon{ width:16px; height:16px; }
+  .danger-btn.armed{ background:var(--crit-tint); border-color:var(--crit); }
+  .task-manage-row .btn .icon{ width:15px; height:15px; vertical-align:-2px; }
+  @media (max-width:640px){
+    .tab-btn{ font-size:11px; }
+  }
+  input[type=search]{ -webkit-appearance:none; appearance:none; }
