@@ -152,6 +152,9 @@
       seedling:'<path d="M12 21v-9"/><path d="M12 12c0-4-3-6-7-6 0 4 3 6 7 6z"/><path d="M12 10c0-3 2-6 7-6 0 4-3 6-7 6z"/>',
       basket:'<path d="M3 10h18l-2 10H5z"/><path d="M8 10l3-6M16 10l-3-6"/>',
       check:'<path d="M5 12.5l4.5 4.5L19 7"/>',
+      home:'<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-5h4v5"/>',
+      pencil:'<path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="M14 6l4 4"/>',
+      trash:'<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',
       search:'<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
       moon:'<path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/>',
       gear:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>'
@@ -1143,7 +1146,7 @@
   // ---------------------------------------------------------------
   var modalOpenFor = null;
 
-  // state.section drives which of the three app sections (Tasks/Library/
+  // state.section drives which app section (Home/Tasks/My garden/
   // Calendar) is showing; renderShell() rebuilds the whole shell (topbar +
   // tab bar + the active section) every time it's called, same "full
   // re-render on any state change" approach the rest of the app already uses.
@@ -1167,6 +1170,7 @@
 
     if (state.section === "library") shell.appendChild(librarySection());
     else if (state.section === "calendar") shell.appendChild(calendarSection());
+    else if (state.section === "tasklist") shell.appendChild(taskListScreen());
     else shell.appendChild(tasksHomeSection());
 
     app.appendChild(shell);
@@ -1187,7 +1191,9 @@
   }
 
   function sectionTabBar(){
-    var tabs = [["tasks","Tasks","tasks"], ["library","My garden","seedling"], ["calendar","Calendar","calendar"]];
+    // "tasks" is the Home dashboard (the key predates the separate Tasks
+    // screen, which is "tasklist").
+    var tabs = [["tasks","Home","home"], ["tasklist","Tasks","tasks"], ["library","My garden","seedling"], ["calendar","Calendar","calendar"]];
     var wrap = el("nav", {class:"tab-bar", "aria-label":"Sections"});
     tabs.forEach(function(t){
       var btn = el("button", {class:"tab-btn" + (state.section===t[0] ? " active" : ""), "aria-current": state.section===t[0] ? "page" : null}, [
@@ -1360,29 +1366,50 @@
     var year = new Date().getFullYear(), today = todayISO();
     return state.tasks.find(function(t){
       if (t.kind !== "tip" || t.title !== tip.task.title) return false;
-      return tip.weather ? (t.createdAt || "").slice(0,10) === today || t.dueDate === today : t.year === year;
+      return tip.weather ? (t.createdAt || "").slice(0,10) === today || t.dueDate === today : (t.year === year || (t.dueDate || "") >= today);
     }) || null;
   }
-  function tipsSection(){
-    if (!window.GardenTips) return null;
-    var dismissed = localGet(TIP_DISMISS_KEY, {});
-    var tips = window.GardenTips.tipsFor({date:new Date(), settings:state.settings, plants:state.plants, weather:state.weather})
-      .filter(function(tip){ return dismissed[tip.id] !== tipDismissKey(tip); })
-      .slice(0, 6);
-    if (!tips.length) return null;
-    var row = el("div", {class:"hscroll", "data-keep-scroll":"tips"});
-    tips.forEach(function(tip){ row.appendChild(tipCard(tip)); });
-    return el("section", {}, [
-      el("div", {class:"section-title"}, [el("h2", {}, ["Garden tips"]), el("span", {class:"hint"}, [MONTH_NAMES[new Date().getMonth()]])]),
-      row
-    ]);
+  function isTipHidden(tip){ return localGet(TIP_DISMISS_KEY, {})[tip.id] === tipDismissKey(tip); }
+  function setTipHidden(tip, hidden){
+    var d = localGet(TIP_DISMISS_KEY, {});
+    if (hidden) d[tip.id] = tipDismissKey(tip); else delete d[tip.id];
+    localSet(TIP_DISMISS_KEY, d);
   }
-  function tipCard(tip){
-    var card = el("article", {class:"tip-card tip-" + (tip.theme || "spring")});
+  function currentTips(){
+    if (!window.GardenTips) return [];
+    return window.GardenTips.tipsFor({date:new Date(), settings:state.settings, plants:state.plants, weather:state.weather});
+  }
+
+  function tipsSection(){
+    var all = currentTips();
+    if (!all.length) return null;
+    var visible = all.filter(function(tip){ return !isTipHidden(tip); }).slice(0, 6);
+    var seeAll = el("button", {class:"link-btn"}, ["All tips (" + all.length + ") →"]);
+    seeAll.addEventListener("click", function(){ openAllTips(); });
+    var head = el("div", {class:"section-title"}, [el("h2", {}, ["Garden tips"]), el("span", {class:"hint"}, [MONTH_NAMES[new Date().getMonth()] + " · ", seeAll])]);
+    if (!visible.length){
+      // Everything hidden: keep a slim way back to them.
+      var again = el("button", {class:"link-btn"}, ["See them all →"]);
+      again.addEventListener("click", function(){ openAllTips(); });
+      return el("section", {}, [head, el("div", {class:"about-locked"}, [el("span", {}, ["💡"]), el("span", {}, ["You've hidden this month's tips. "]), again])]);
+    }
+    var row = el("div", {class:"hscroll", "data-keep-scroll":"tips"});
+    visible.forEach(function(tip){ row.appendChild(tipCard(tip)); });
+    return el("section", {}, [head, row]);
+  }
+
+  // opts.month (0-11): the tip is being browsed for that month (All tips
+  // sheet); opts.onChange: repaint callback (defaults to the dashboard);
+  // opts.list: full-width layout for the sheet.
+  function tipCard(tip, opts){
+    opts = opts || {};
+    var refresh = opts.onChange || renderShell;
+    var hidden = isTipHidden(tip);
+    var card = el("article", {class:"tip-card tip-" + (tip.theme || "spring") + (opts.list ? " tip-card-list" : "") + (hidden ? " is-hidden" : "")});
     card.appendChild(el("div", {class:"tip-head"}, [
       el("span", {class:"tip-emoji", "aria-hidden":"true"}, [tip.emoji]),
       el("div", {}, [
-        el("div", {class:"tip-kicker"}, [tip.weather ? "Weather tip" : "Seasonal tip"]),
+        el("div", {class:"tip-kicker"}, [tip.weather ? "Weather tip" : "Seasonal tip", hidden ? el("span", {class:"chip chip-neutral", style:"margin-left:6px;letter-spacing:0;text-transform:none;"}, ["Hidden"]) : null]),
         el("div", {class:"tip-title"}, [tip.title])
       ])
     ]));
@@ -1393,26 +1420,39 @@
       actions.appendChild(el("div", {class:"tip-added"}, [el("span", {html:icon("check")}), "In your tasks · " + relativeDay(added.dueDate)]));
     } else {
       var addBtn = el("button", {class:"btn btn-primary btn-sm"}, ["+ Add as task"]);
-      addBtn.addEventListener("click", function(){ addTipAsTask(tip, addBtn); });
+      addBtn.addEventListener("click", function(){ addTipAsTask(tip, addBtn, {month:opts.month, onChange:refresh}); });
+      actions.appendChild(addBtn);
+    }
+    if (hidden){
+      var show = el("button", {class:"btn btn-ghost btn-sm"}, ["Show on Home"]);
+      show.addEventListener("click", function(){ setTipHidden(tip, false); refresh(); showToast("Tip is back on Home"); });
+      actions.appendChild(show);
+    } else if (!added && opts.month === undefined){
       var notNow = el("button", {class:"btn btn-ghost btn-sm"}, ["Not now"]);
       notNow.addEventListener("click", function(){
-        var d = localGet(TIP_DISMISS_KEY, {});
-        d[tip.id] = tipDismissKey(tip);
-        localSet(TIP_DISMISS_KEY, d);
-        renderShell();
-        showToast("Tip hidden", {label:"Undo", fn:function(){
-          var d2 = localGet(TIP_DISMISS_KEY, {}); delete d2[tip.id]; localSet(TIP_DISMISS_KEY, d2); renderShell();
-        }});
+        setTipHidden(tip, true);
+        refresh();
+        showToast("Tip hidden — find it under All tips", {label:"Undo", fn:function(){ setTipHidden(tip, false); refresh(); }});
       });
-      actions.appendChild(addBtn);
       actions.appendChild(notNow);
     }
     card.appendChild(actions);
     return card;
   }
-  async function addTipAsTask(tip, btn){
+
+  // Due date for a tip's task: from today for this month's tips; for a
+  // tip browsed under another month, from the start of that month's next
+  // occurrence (this year if still ahead, else next year).
+  function tipDueDate(tip, month){
+    var now = new Date();
+    if (month === undefined || month === now.getMonth()) return addDays(todayISO(), tip.task.dueInDays || 0);
+    var year = month > now.getMonth() ? now.getFullYear() : now.getFullYear() + 1;
+    return addDays(isoDate(year, month + 1, 1), tip.task.dueInDays || 0);
+  }
+  async function addTipAsTask(tip, btn, opts){
+    opts = opts || {};
     btn.disabled = true; btn.textContent = "Adding…";
-    var due = addDays(todayISO(), tip.task.dueInDays || 0);
+    var due = tipDueDate(tip, opts.month);
     try {
       var created = await api("/tasks", {method:"POST", body:{
         title: tip.task.title, description: tip.task.description || tip.body, dueDate: due,
@@ -1425,7 +1465,41 @@
     }
     buzz(); leafBurst(btn);
     showToast("Added to your tasks — due " + relativeDay(due));
-    renderShell();
+    (opts.onChange || renderShell)();
+  }
+
+  // The "All tips" sheet: every tip for a month — including ones hidden
+  // with "Not now" — with a month picker to browse the rest of the year.
+  function openAllTips(month){
+    var now = new Date();
+    if (month === undefined) month = now.getMonth();
+    showModal(function(container){
+      container.appendChild(el("div", {class:"modal-head"}, [
+        el("h3", {style:"font-size:17px;"}, ["Garden tips"]),
+        el("button", {class:"modal-close", "aria-label":"Close", onclick:closeModal}, ["×"])
+      ]));
+      var months = el("div", {class:"filter-chips month-chips", role:"toolbar", "aria-label":"Month"});
+      for (var i=0;i<12;i++){
+        var m = (now.getMonth() + i) % 12; // start from this month
+        var chip = el("button", {class:"fchip" + (m === month ? " active" : ""), "aria-pressed": m === month ? "true" : "false"}, [i === 0 ? "This month" : MONTH_NAMES[m].slice(0,3)]);
+        chip.addEventListener("click", (function(mm){ return function(){ openAllTips(mm); }; })(m));
+        months.appendChild(chip);
+      }
+      container.appendChild(months);
+      var isNow = month === now.getMonth();
+      var tips = window.GardenTips ? window.GardenTips.tipsFor({
+        date:new Date(now.getFullYear(), month, 15), settings:state.settings, plants:state.plants, weather: isNow ? state.weather : null
+      }) : [];
+      container.appendChild(el("p", {class:"lead", style:"font-size:13px;color:var(--ink-soft);margin:10px 0 12px;"}, [
+        tips.length + (tips.length === 1 ? " tip" : " tips") + " for " + (isNow ? "this month" : MONTH_NAMES[month]) + ", picked for the plants in your garden." + (isNow ? "" : " Adding one sets it for early " + MONTH_NAMES[month] + ".")
+      ]));
+      if (!tips.length) container.appendChild(el("div", {class:"empty"}, ["No tips for this month."]));
+      var list = el("div", {class:"tips-list"});
+      tips.forEach(function(tip){
+        list.appendChild(tipCard(tip, {list:true, month: isNow ? undefined : month, onChange:function(){ openAllTips(month); }}));
+      });
+      container.appendChild(list);
+    }, {keepScroll:true});
   }
 
   function severityChip(sev){
@@ -1452,9 +1526,11 @@
   // chips sprinkled through it.
   function tasksSection(tasks){
     var sec = el("div", {class:"card", style:"margin:22px 0 18px;"});
+    var allLink = el("button", {class:"link-btn"}, ["All tasks →"]);
+    allLink.addEventListener("click", function(){ state.section = "tasklist"; renderShell(); window.scrollTo(0, 0); });
     sec.appendChild(el("div", {class:"section-head"}, [
       el("h2", {}, ["This week"]),
-      el("span", {class:"hint"}, [tasks.length ? tasks.length + " open" + (isTouch() ? " · swipe → when done" : "") : ""])
+      el("span", {class:"hint"}, [tasks.length ? tasks.length + " open" + (isTouch() ? " · swipe → when done · " : " · ") : "", allLink])
     ]));
     if (tasks.length === 0){
       sec.appendChild(el("div", {class:"empty-fun"}, [el("span", {class:"big"}, ["🌻"]), "All clear this week! I'll add tasks here each morning when something needs attention."]));
@@ -1773,7 +1849,230 @@
     wrap.appendChild(el("div", {class:"field", style:"margin-top:8px;"}, [commentTa]));
     wrap.appendChild(el("div", {class:"row"}, [photoLabel, saveBtn]));
 
+    var editBtn = el("button", {class:"btn btn-ghost btn-sm"}, [el("span", {html:icon("pencil")}), " Edit"]);
+    editBtn.addEventListener("click", function(){ openTaskForm(t); });
+    wrap.appendChild(el("div", {class:"row task-manage-row"}, [editBtn, deleteTaskButton(t)]));
+
     return wrap;
+  }
+
+  // ---- Tasks screen: every task in one place, with search and filters
+  // (open/done, kind, plant), grouped by when it's due; add, edit and
+  // delete from here. Search typing only repaints the list, so the field
+  // keeps focus. ----
+  var TASK_KINDS = [
+    ["all", "All"], ["manual", "✍️ Mine"], ["scheduled", "📅 Care guide"], ["issue", "🩺 Problems"], ["checkin", "📷 Check-ins"], ["tip", "💡 Tips"]
+  ];
+  var taskFilter = {status:"open", kind:"all", plant:"all", q:""};
+
+  function taskListScreen(){
+    var wrap = el("div", {});
+    var openCount = state.tasks.filter(function(t){ return t.status !== "done"; }).length;
+    var addBtn = el("button", {class:"btn btn-sm btn-primary"}, ["+ New task"]);
+    addBtn.addEventListener("click", function(){ openTaskForm(null); });
+    wrap.appendChild(el("div", {class:"section-title", style:"margin-top:4px;align-items:center;"}, [
+      el("div", {}, [el("h2", {}, ["Tasks"]), el("div", {class:"hint"}, [openCount + " open · " + (state.tasks.length - openCount) + " done"])]),
+      addBtn
+    ]));
+
+    var toolbar = el("div", {class:"lib-toolbar"});
+    var results = el("div", {});
+    var search = el("input", {type:"search", placeholder:"Search tasks", value:taskFilter.q, "aria-label":"Search tasks", autocomplete:"off"});
+    search.addEventListener("input", function(){ taskFilter.q = search.value; renderTaskResults(results); });
+    toolbar.appendChild(el("div", {class:"search-wrap"}, [el("span", {html:icon("search")}), search]));
+
+    var seg = el("div", {class:"seg", role:"group", "aria-label":"Status"});
+    [["open","Open"],["done","Done"],["all","All"]].forEach(function(v){
+      var b = el("button", {class: taskFilter.status === v[0] ? "active" : "", "aria-pressed": taskFilter.status === v[0] ? "true" : "false"}, [v[1]]);
+      b.addEventListener("click", function(){ taskFilter.status = v[0]; renderShell(); });
+      seg.appendChild(b);
+    });
+    var plantSel = el("select", {class:"sort-select", "aria-label":"Filter by plant"},
+      [["all","All plants"]].concat(state.plants.map(function(p){ return [p.id, p.name]; }), [["none","Not about a plant"]]).map(function(o){
+        var opt = el("option", {value:o[0]}, [o[1]]);
+        if (taskFilter.plant === o[0]) opt.setAttribute("selected","selected");
+        return opt;
+      }));
+    plantSel.addEventListener("change", function(){ taskFilter.plant = plantSel.value; renderTaskResults(results); });
+    toolbar.appendChild(el("div", {class:"lib-toolbar-row"}, [seg, plantSel]));
+
+    // Kind chips — only kinds that actually exist, plus All.
+    var kindsPresent = {};
+    state.tasks.forEach(function(t){ kindsPresent[t.kind || "manual"] = true; });
+    var chips = el("div", {class:"filter-chips", role:"toolbar", "aria-label":"Filter by type"});
+    TASK_KINDS.forEach(function(k){
+      if (k[0] !== "all" && !kindsPresent[k[0]]) return;
+      var chip = el("button", {class:"fchip" + (taskFilter.kind === k[0] ? " active" : ""), "aria-pressed": taskFilter.kind === k[0] ? "true" : "false"}, [k[1]]);
+      chip.addEventListener("click", function(){ taskFilter.kind = k[0]; renderShell(); });
+      chips.appendChild(chip);
+    });
+    if (chips.children.length > 2) toolbar.appendChild(chips);
+
+    wrap.appendChild(toolbar);
+    wrap.appendChild(results);
+    renderTaskResults(results);
+    return wrap;
+  }
+
+  function filteredTasks(){
+    var q = taskFilter.q.trim().toLowerCase();
+    return state.tasks.filter(function(t){
+      if (taskFilter.status === "open" && t.status === "done") return false;
+      if (taskFilter.status === "done" && t.status !== "done") return false;
+      if (taskFilter.kind !== "all" && (t.kind || "manual") !== taskFilter.kind) return false;
+      if (taskFilter.plant === "none" && t.plantId) return false;
+      if (taskFilter.plant !== "all" && taskFilter.plant !== "none" && t.plantId !== taskFilter.plant) return false;
+      if (!q) return true;
+      return [t.title, t.description, t.plantName].some(function(v){ return v && String(v).toLowerCase().indexOf(q) !== -1; });
+    });
+  }
+
+  function renderTaskResults(container){
+    container.innerHTML = "";
+    var list = filteredTasks();
+    if (!list.length){
+      var anyFilter = taskFilter.q || taskFilter.kind !== "all" || taskFilter.plant !== "all";
+      container.appendChild(el("div", {class:"card empty-fun"}, [
+        el("span", {class:"big"}, [taskFilter.status === "done" ? "🌾" : "🌻"]),
+        anyFilter ? "No tasks match these filters." : (taskFilter.status === "done" ? "Nothing finished yet." : "No open tasks — tap “+ New task” to add one.")
+      ]));
+      return;
+    }
+    var today = todayISO();
+    var open = list.filter(function(t){ return t.status !== "done"; })
+      .sort(function(a,b){ return (a.dueDate||"9999").localeCompare(b.dueDate||"9999"); });
+    var done = list.filter(function(t){ return t.status === "done"; })
+      .sort(function(a,b){ return String(b.completedAt||b.dueDate||"").localeCompare(String(a.completedAt||a.dueDate||"")); });
+
+    // Open: Overdue / Today / This week / then one group per month.
+    var groups = [], byKey = {};
+    function add(key, label, cls, t){
+      if (!byKey[key]){ byKey[key] = {label:label, cls:cls, items:[]}; groups.push(byKey[key]); }
+      byKey[key].items.push(t);
+    }
+    open.forEach(function(t){
+      if (!t.dueDate) return add("nodate", "Anytime", "", t);
+      var n = daysFromToday(t.dueDate);
+      if (t.dueDate < today) return add("overdue", "Overdue", "catchup", t);
+      if (n === 0) return add("today", "Today", "", t);
+      if (n < 7) return add("week", "This week", "", t);
+      var d = new Date(t.dueDate + "T00:00:00");
+      add("m" + t.dueDate.slice(0,7), MONTH_NAMES[d.getMonth()] + (d.getFullYear() !== new Date().getFullYear() ? " " + d.getFullYear() : ""), "", t);
+    });
+    // "Anytime" last.
+    groups.sort(function(a,b){ return (a.label === "Anytime") - (b.label === "Anytime"); });
+    if (done.length) groups.push({label:"Done", cls:"", items:done});
+
+    var card = el("div", {class:"card"});
+    groups.forEach(function(g){
+      card.appendChild(el("div", {class:"task-group-label" + (g.cls ? " " + g.cls : "")}, [g.label, el("span", {class:"count"}, ["· " + g.items.length])]));
+      g.items.forEach(function(t){ card.appendChild(taskListRow(t, {swipe:true})); });
+    });
+    container.appendChild(card);
+  }
+
+  // Add (task === null) or edit a task. opts.plantId pre-selects a plant.
+  function openTaskForm(task, opts){
+    opts = opts || {};
+    var isNew = !task;
+    showModal(function(container){
+      container.appendChild(el("div", {class:"modal-head"}, [
+        el("h3", {style:"font-size:17px;"}, [isNew ? "New task" : "Edit task"]),
+        el("button", {class:"modal-close", "aria-label":"Close", onclick:closeModal}, ["×"])
+      ]));
+      var titleIn = el("input", {type:"text", placeholder:"e.g. Buy compost", value: task ? task.title : ""});
+      var notesIn = el("textarea", {placeholder:"Notes (optional)", style:"min-height:64px;"});
+      notesIn.value = task ? (task.description || "") : "";
+      var dateIn = el("input", {type:"date", value: task ? (task.dueDate || "") : todayISO()});
+      var selectedPlant = task ? (task.plantId || "") : (opts.plantId || "");
+      var plantSel = el("select", {}, [el("option", {value:""}, ["Not about a specific plant"])].concat(state.plants.map(function(p){
+        var o = el("option", {value:p.id}, [p.name]);
+        if (p.id === selectedPlant) o.setAttribute("selected","selected");
+        return o;
+      })));
+      var photoIn = el("input", {type:"checkbox", id:"tfPhoto"});
+      photoIn.checked = !!(task && task.requestsPhoto);
+      var err = el("div", {class:"empty", style:"min-height:18px;"});
+
+      // Quick due-date shortcuts.
+      var quick = el("div", {class:"option-chips", style:"margin-top:8px;"});
+      [["Today",0],["Tomorrow",1],["In a week",7],["In 2 weeks",14]].forEach(function(q){
+        var b = el("button", {class:"option-chip", type:"button", style:"min-height:36px;padding:6px 12px;font-size:13px;"}, [q[0]]);
+        b.addEventListener("click", function(){ dateIn.value = addDays(todayISO(), q[1]); });
+        quick.appendChild(b);
+      });
+
+      container.appendChild(el("div", {class:"field"}, [el("label", {}, ["What needs doing?"]), titleIn]));
+      container.appendChild(el("div", {class:"field"}, [el("label", {}, ["Due"]), dateIn, quick]));
+      container.appendChild(el("div", {class:"field"}, [el("label", {}, ["Plant"]), plantSel]));
+      container.appendChild(el("div", {class:"field"}, [el("label", {}, ["Notes"]), notesIn]));
+      container.appendChild(el("label", {class:"check-row", for:"tfPhoto"}, [photoIn, "Ask me for a photo when I do this"]));
+      if (task && task.kind === "scheduled"){
+        container.appendChild(el("div", {class:"about-locked", style:"margin-top:10px;"}, ["📅 This task comes from " + (task.plantName || "a plant") + "'s care guide. Updating the care guide rebuilds these tasks, which would undo edits to upcoming ones."]));
+      }
+      container.appendChild(err);
+
+      var saveBtn = el("button", {class:"btn btn-primary"}, [isNew ? "Add task" : "Save changes"]);
+      saveBtn.addEventListener("click", async function(){
+        var title = titleIn.value.trim();
+        if (!title){ err.textContent = "Give the task a name."; titleIn.focus(); return; }
+        if (!dateIn.value){ err.textContent = "Pick a due date."; return; }
+        var plant = state.plants.find(function(p){ return p.id === plantSel.value; });
+        var body = {
+          title: title, description: notesIn.value.trim(), dueDate: dateIn.value,
+          plantId: plant ? plant.id : null, plantName: plant ? plant.name : "",
+          requestsPhoto: photoIn.checked
+        };
+        saveBtn.disabled = true; saveBtn.textContent = "Saving…";
+        try {
+          if (isNew){
+            body.kind = "manual"; body.reason = "Added by you"; body.severity = "info";
+            body.year = new Date(body.dueDate + "T00:00:00").getFullYear();
+            await api("/tasks", {method:"POST", body:body});
+          } else {
+            await api("/tasks/" + task.id, {method:"PATCH", body:body});
+          }
+          await loadGardenData();
+        } catch(e){
+          saveBtn.disabled = false; saveBtn.textContent = "Couldn't save — try again";
+          return;
+        }
+        buzz();
+        closeModal();
+        showToast(isNew ? "Task added — due " + relativeDay(body.dueDate) : "Task updated");
+      });
+      var row = el("div", {class:"row", style:"justify-content:space-between;margin-top:6px;"});
+      if (!isNew) row.appendChild(deleteTaskButton(task)); else row.appendChild(el("span"));
+      row.appendChild(saveBtn);
+      container.appendChild(row);
+      if (isNew) setTimeout(function(){ titleIn.focus(); }, 60);
+    });
+  }
+
+  // A Delete button that asks once, inline, before deleting.
+  function deleteTaskButton(t){
+    var btn = el("button", {class:"btn btn-ghost danger-btn"}, [el("span", {html:icon("trash")}), " Delete"]);
+    var armed = false;
+    btn.addEventListener("click", async function(){
+      if (!armed){
+        armed = true;
+        btn.classList.add("armed");
+        btn.textContent = "Tap again to delete";
+        setTimeout(function(){ if (armed && !btn.disabled){ armed = false; btn.classList.remove("armed"); btn.innerHTML = ""; btn.appendChild(el("span", {html:icon("trash")})); btn.appendChild(document.createTextNode(" Delete")); } }, 3500);
+        return;
+      }
+      btn.disabled = true; btn.textContent = "Deleting…";
+      try {
+        await api("/tasks/" + t.id, {method:"DELETE"});
+      } catch(e){
+        btn.disabled = false; btn.textContent = "Couldn't delete — try again";
+        return;
+      }
+      state.tasks = state.tasks.filter(function(x){ return x.id !== t.id; });
+      closeModal();
+      showToast("Deleted “" + t.title + "”");
+    });
+    return btn;
   }
 
   // ---- Library: photo-first cards, searchable/filterable/sortable, shown
@@ -2452,7 +2751,11 @@
     knowBtn.addEventListener("click", function(){ openGetToKnowPlant(p); });
     container.appendChild(knowBtn);
 
-    var askBtn = el("button", {class:"btn btn-ghost btn-sm", style:"margin-top:16px;display:block;"}, ["Ask about this plant →"]);
+    var addTaskBtn = el("button", {class:"btn btn-ghost btn-sm", style:"margin-top:16px;display:block;"}, ["+ Add a task for this plant"]);
+    addTaskBtn.addEventListener("click", function(){ modalOpenFor = null; openTaskForm(null, {plantId:p.id}); });
+    container.appendChild(addTaskBtn);
+
+    var askBtn = el("button", {class:"btn btn-ghost btn-sm", style:"margin-top:4px;display:block;"}, ["Ask about this plant →"]);
     askBtn.addEventListener("click", function(){
       closeModal(); modalOpenFor=null;
       openAsk("About my " + p.name + ": ");

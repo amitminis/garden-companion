@@ -97,6 +97,17 @@ headroom before hitting the cap again.
   missing. Both the wizard's build-card call and "Build / Update care
   guide" (`/research`) now send those details to the model
   (`lib/care-prompt.js`).
+- **Tasks screen** (4th tab; Home is the dashboard): every task with
+  search, Open/Done/All, kind chips (mine, care guide, problems,
+  check-ins, tips) and a plant filter, grouped Overdue / Today / This week
+  / by month. "+ New task" creates `kind: "manual"` tasks; any task can be
+  edited or deleted (`DELETE /api/tasks/:id`, two-tap confirm) from its
+  detail. Editing a future care-guide (`scheduled`) task is allowed, but
+  "Update care guide" rebuilds those.
+- **All tips sheet**: "All tips (N) →" on Home lists every tip for the
+  month, including ones hidden with "Not now" (with "Show on Home"), and a
+  month picker to browse the year; a tip added from another month is due
+  early that month.
 - **Knowledge score** (the level %): spot/sun/watering/soil/age 10 each (5
   for "Not sure"), species 5, care guide 25, a photo 15, a recent photo 5.
 
