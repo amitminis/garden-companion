@@ -2059,30 +2059,47 @@
     });
   }
 
-  // A Delete button that asks once, inline, before deleting.
-  function deleteTaskButton(t){
-    var btn = el("button", {class:"btn btn-ghost danger-btn"}, [el("span", {html:icon("trash")}), " Delete"]);
+  // A delete button that asks once, inline ("Tap again…"), then runs
+  // doDelete(); a throw from doDelete re-enables it with a retry message.
+  function confirmDeleteButton(label, armedLabel, doDelete){
+    function idle(){ btn.innerHTML = ""; btn.appendChild(el("span", {html:icon("trash")})); btn.appendChild(document.createTextNode(" " + label)); }
+    var btn = el("button", {class:"btn btn-ghost danger-btn"});
+    idle();
     var armed = false;
     btn.addEventListener("click", async function(){
       if (!armed){
         armed = true;
         btn.classList.add("armed");
-        btn.textContent = "Tap again to delete";
-        setTimeout(function(){ if (armed && !btn.disabled){ armed = false; btn.classList.remove("armed"); btn.innerHTML = ""; btn.appendChild(el("span", {html:icon("trash")})); btn.appendChild(document.createTextNode(" Delete")); } }, 3500);
+        btn.textContent = armedLabel;
+        setTimeout(function(){ if (armed && !btn.disabled){ armed = false; btn.classList.remove("armed"); idle(); } }, 3500);
         return;
       }
       btn.disabled = true; btn.textContent = "Deleting…";
-      try {
-        await api("/tasks/" + t.id, {method:"DELETE"});
-      } catch(e){
-        btn.disabled = false; btn.textContent = "Couldn't delete — try again";
-        return;
-      }
+      try { await doDelete(); }
+      catch(e){ btn.disabled = false; btn.textContent = "Couldn't delete — try again"; }
+    });
+    return btn;
+  }
+
+  function deleteTaskButton(t){
+    return confirmDeleteButton("Delete", "Tap again to delete", async function(){
+      await api("/tasks/" + t.id, {method:"DELETE"});
       state.tasks = state.tasks.filter(function(x){ return x.id !== t.id; });
       closeModal();
       showToast("Deleted “" + t.title + "”");
     });
-    return btn;
+  }
+
+  // Removing a plant also removes its tasks (ON DELETE CASCADE server-side).
+  function removePlantButton(p){
+    return confirmDeleteButton("Remove " + p.name + " from my garden", "Tap again to remove it for good", async function(){
+      await api("/plants/" + p.id, {method:"DELETE"});
+      state.plants = state.plants.filter(function(x){ return x.id !== p.id; });
+      state.tasks = state.tasks.filter(function(t){ return t.plantId !== p.id; });
+      modalOpenFor = null;
+      closeModal();
+      showToast("Removed " + p.name);
+    });
   }
 
   // ---- Library: photo-first cards, searchable/filterable/sortable, shown
@@ -2856,6 +2873,12 @@
       openAsk("About my " + p.name + ": ");
     });
     container.appendChild(askBtn);
+
+    var nTasks = state.tasks.filter(function(t){ return t.plantId === p.id; }).length;
+    container.appendChild(el("div", {class:"danger-zone"}, [
+      removePlantButton(p),
+      el("div", {class:"danger-note"}, ["Deletes its photos, details" + (nTasks ? " and its " + nTasks + (nTasks === 1 ? " task" : " tasks") : "") + ". This can't be undone."])
+    ]));
   }
 
   // ---- Care guide tab: species-level research, plus the "Update research"
