@@ -1385,14 +1385,40 @@
     if (hidden) d[tip.id] = tipDismissKey(tip); else delete d[tip.id];
     localSet(TIP_DISMISS_KEY, d);
   }
+  // Seasonal tips come from GET /api/tips?month=N — written by the model for
+  // this garden's location, climate and plants, cached server-side per
+  // month. tipsByMonth[month0] is {status:"loading"|"ready"|"error", tips}.
+  var tipsByMonth = {};
+  function loadTips(month0, onDone){
+    var entry = tipsByMonth[month0];
+    if (entry && entry.status !== "error") { if (entry.status === "ready" && onDone) onDone(); return; }
+    tipsByMonth[month0] = {status:"loading", tips:[]};
+    api("/tips?month=" + (month0 + 1)).then(function(r){
+      tipsByMonth[month0] = {status: r && r.tips && r.tips.length ? "ready" : "error", tips:(r && r.tips) || [], year:r && r.year};
+    }).catch(function(){
+      tipsByMonth[month0] = {status:"error", tips:[]};
+    }).then(function(){ if (onDone) onDone(); });
+  }
   function currentTips(){
-    if (!window.GardenTips) return [];
-    return window.GardenTips.tipsFor({date:new Date(), settings:state.settings, plants:state.plants, weather:state.weather});
+    var weather = window.GardenTips ? window.GardenTips.weatherTips(state.weather) : [];
+    var month = tipsByMonth[new Date().getMonth()];
+    return weather.concat(month && month.status === "ready" ? month.tips : []);
   }
 
   function tipsSection(){
+    var m0 = new Date().getMonth();
+    var status = tipsByMonth[m0] ? tipsByMonth[m0].status : "loading";
+    if (!tipsByMonth[m0]) loadTips(m0, function(){ if (state.section === "tasks" && !modalOpenFor && !userIsBusy()) renderShell(); });
     var all = currentTips();
-    if (!all.length) return null;
+    if (!all.length){
+      if (status === "loading"){
+        return el("section", {}, [
+          el("div", {class:"section-title"}, [el("h2", {}, ["Garden tips"]), el("span", {class:"hint"}, [MONTH_NAMES[m0]])]),
+          el("div", {class:"about-locked tips-loading"}, [el("span", {}, ["🌱"]), el("span", {}, ["Picking this month's tips for your garden…"])])
+        ]);
+      }
+      return null;
+    }
     var visible = all.filter(function(tip){ return !isTipHidden(tip); }).slice(0, 6);
     var seeAll = el("button", {class:"link-btn"}, ["All tips (" + all.length + ") →"]);
     seeAll.addEventListener("click", function(){ openAllTips(); });
@@ -1419,7 +1445,7 @@
     card.appendChild(el("div", {class:"tip-head"}, [
       el("span", {class:"tip-emoji", "aria-hidden":"true"}, [tip.emoji]),
       el("div", {}, [
-        el("div", {class:"tip-kicker"}, [tip.weather ? "Weather tip" : "Seasonal tip", hidden ? el("span", {class:"chip chip-neutral", style:"margin-left:6px;letter-spacing:0;text-transform:none;"}, ["Hidden"]) : null]),
+        el("div", {class:"tip-kicker"}, [tip.weather ? "Weather tip" : (tip.plants && tip.plants.length ? "For your " + tip.plants.join(", ") : "Seasonal tip"), hidden ? el("span", {class:"chip chip-neutral", style:"margin-left:6px;letter-spacing:0;text-transform:none;"}, ["Hidden"]) : null]),
         el("div", {class:"tip-title"}, [tip.title])
       ])
     ]));
@@ -1450,9 +1476,10 @@
     return card;
   }
 
-  // Due date for a tip's task: from today for this month's tips; for a
-  // tip browsed under another month, from the start of that month's next
-  // occurrence (this year if still ahead, else next year).
+  // Due date for a tip's task: dueInDays counts from today for this
+  // month's tips, and from the 1st of the month for a tip browsed under
+  // another month (that month's next occurrence: this year if still ahead,
+  // else next year) — the same reference the server gives the model.
   function tipDueDate(tip, month){
     var now = new Date();
     if (month === undefined || month === now.getMonth()) return addDays(todayISO(), tip.task.dueInDays || 0);
@@ -1497,13 +1524,27 @@
       }
       container.appendChild(months);
       var isNow = month === now.getMonth();
-      var tips = window.GardenTips ? window.GardenTips.tipsFor({
-        date:new Date(now.getFullYear(), month, 15), settings:state.settings, plants:state.plants, weather: isNow ? state.weather : null
-      }) : [];
+      var entry = tipsByMonth[month];
+      if (!entry || entry.status === "loading"){
+        container.appendChild(el("div", {class:"about-locked tips-loading", style:"margin-top:12px;"}, [el("span", {}, ["🌱"]), el("span", {}, ["Writing " + MONTH_NAMES[month] + "'s tips for your garden — this takes a few seconds the first time…"])]));
+        // Re-open once loaded, unless the sheet was closed or moved on.
+        loadTips(month, function(){
+          var sheet = document.getElementById("modalContent");
+          if (!document.getElementById("overlay").hidden && sheet && sheet.getAttribute("data-tips-month") === String(month)) openAllTips(month);
+        });
+        container.setAttribute("data-tips-month", String(month));
+        return;
+      }
+      container.setAttribute("data-tips-month", String(month));
+      var tips = (isNow && window.GardenTips ? window.GardenTips.weatherTips(state.weather) : []).concat(entry.status === "ready" ? entry.tips : []);
       container.appendChild(el("p", {class:"lead", style:"font-size:13px;color:var(--ink-soft);margin:10px 0 12px;"}, [
-        tips.length + (tips.length === 1 ? " tip" : " tips") + " for " + (isNow ? "this month" : MONTH_NAMES[month]) + ", picked for the plants in your garden." + (isNow ? "" : " Adding one sets it for early " + MONTH_NAMES[month] + ".")
+        tips.length + (tips.length === 1 ? " tip" : " tips") + " for " + (isNow ? "this month" : MONTH_NAMES[month]) + ", written for your garden's location, climate and plants." + (isNow ? "" : " Adding one sets it for early " + MONTH_NAMES[month] + ".")
       ]));
-      if (!tips.length) container.appendChild(el("div", {class:"empty"}, ["No tips for this month."]));
+      if (!tips.length){
+        var retry = el("button", {class:"link-btn"}, ["Try again"]);
+        retry.addEventListener("click", function(){ delete tipsByMonth[month]; openAllTips(month); });
+        container.appendChild(el("div", {class:"empty"}, ["Couldn't load tips for this month right now. ", retry]));
+      }
       var list = el("div", {class:"tips-list"});
       tips.forEach(function(tip){
         list.appendChild(tipCard(tip, {list:true, month: isNow ? undefined : month, onChange:function(){ openAllTips(month); }}));
@@ -2378,14 +2419,7 @@
       }));
       container.appendChild(el("div", {class:"field"}, [el("label", {}, ["Weekly photo check-in day"]), daySelect]));
 
-      // Seasonal garden tips flip by six months south of the equator.
-      var hemi = (s.location && s.location.hemisphere) || "";
-      var hemiSelect = el("select", {}, [["", "Automatic (from your location)"], ["north", "Northern hemisphere"], ["south", "Southern hemisphere"]].map(function(o){
-        var opt = el("option", {value:o[0]}, [o[1]]);
-        if (hemi === o[0]) opt.setAttribute("selected","selected");
-        return opt;
-      }));
-      container.appendChild(el("div", {class:"field"}, [el("label", {}, ["Seasons for garden tips"]), hemiSelect]));
+
 
       container.appendChild(el("p", {style:"font-size:12.5px;color:var(--ink-faint);margin:0 0 16px;"}, [
         "Weather and care checks run early each morning. New plants get researched within about an hour of adding them — no need to wait for the daily check-in."
@@ -2395,7 +2429,6 @@
       saveBtn.addEventListener("click", async function(){
         saveBtn.disabled = true; saveBtn.textContent = "Saving…";
         var loc = Object.assign({}, s.location, {label: locInput.value || "Unspecified"});
-        if (hemiSelect.value) loc.hemisphere = hemiSelect.value; else delete loc.hemisphere;
         try {
           await api("/settings", {method:"PATCH", body:{location:loc, photoCheckinDay:daySelect.value}});
         } catch(e){
@@ -2412,7 +2445,8 @@
   // ---- Calendar section: Year/Month/Week views over the `tasks` collection. ----
   // Deliberately read-only for completion — tasks can be opened and reviewed
   // (comments/photo still allowed) but never marked done from here; that only
-  // happens from the Tasks section. Locked to the current year.
+  // happens from the Tasks section. Spans Jan 1 of this year through the
+  // next 12 months (care-guide tasks are scheduled on a rolling 12 months).
   var yearlyPlan = { mode:"month", anchor: isoDate(new Date().getFullYear(), new Date().getMonth()+1, 1) };
 
   function weekDatesFor(d){
@@ -2447,11 +2481,13 @@
     return fmt(first) + " – " + (first.getMonth()===last.getMonth() ? last.getDate() : fmt(last)) + ", " + last.getFullYear();
   }
   function shiftYearlyAnchor(dir){
-    var year = new Date().getFullYear();
+    var now = new Date();
+    var earliest = new Date(now.getFullYear(), 0, 1);
+    var latest = new Date(now.getFullYear(), now.getMonth() + 12, 0); // end of the 12th month from now
     var d = new Date(yearlyPlan.anchor + "T00:00:00");
     if (yearlyPlan.mode === "month") d.setMonth(d.getMonth() + dir, 1);
     else d.setDate(d.getDate() + dir*7);
-    if (d.getFullYear() !== year) return; // stay within the current year
+    if (d < earliest || d > latest) return;
     yearlyPlan.anchor = isoDate(d.getFullYear(), d.getMonth()+1, d.getDate());
   }
 
@@ -2477,7 +2513,7 @@
       el("div", {class:"row", style:"gap:6px;"}, [yearBtn, monthBtn, weekBtn])
     ]);
     if (yearlyPlan.mode === "year"){
-      header.appendChild(el("div", {style:"font-weight:600;font-size:14.5px;"}, [String(new Date().getFullYear())]));
+      header.appendChild(el("div", {style:"font-weight:600;font-size:14.5px;"}, ["Next 12 months"]));
     } else {
       var prevBtn = el("button", {class:"btn btn-ghost btn-sm"}, ["←"]);
       var nextBtn = el("button", {class:"btn btn-ghost btn-sm"}, ["→"]);
@@ -2497,33 +2533,30 @@
     return container;
   }
 
-  // Year view: one cell per month with an open-task count; clicking a month
-  // drills into Month view anchored there.
+  // Year view: the next 12 months (this month first), one cell per month
+  // with an open-task count; clicking a month drills into Month view.
   function buildYearGrid(container){
-    var year = new Date().getFullYear();
+    var now = new Date();
     var map = tasksByDateMap();
-    var counts = new Array(12).fill(0);
-    Object.keys(map).forEach(function(dateStr){
-      if (dateStr.slice(0,4) === String(year)){
-        var m = parseInt(dateStr.slice(5,7), 10) - 1;
-        counts[m] += map[dateStr].filter(function(t){ return t.status !== "done"; }).length;
-      }
-    });
     var grid = el("div", {style:"display:grid;grid-template-columns:repeat(3,1fr);gap:10px;"});
-    var thisMonth = new Date().getMonth();
-    MONTH_NAMES.forEach(function(name, i){
-      var isCurrent = i === thisMonth;
-      var cell = el("button", {style:"text-align:left;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--surface);cursor:pointer;" + (isCurrent ? "box-shadow:inset 0 0 0 2px var(--moss);" : "")}, [
-        el("div", {style:"font-weight:600;font-size:14px;margin-bottom:4px;"}, [name]),
-        el("div", {style:"font-size:12px;color:var(--ink-faint);"}, [counts[i] + (counts[i]===1 ? " open task" : " open tasks")])
-      ]);
-      cell.addEventListener("click", function(){
-        yearlyPlan.mode = "month";
-        yearlyPlan.anchor = isoDate(year, i+1, 1);
-        renderShell();
+    for (var k=0; k<12; k++){
+      var d = new Date(now.getFullYear(), now.getMonth() + k, 1);
+      var prefix = isoDate(d.getFullYear(), d.getMonth()+1, 1).slice(0, 7);
+      var count = 0;
+      Object.keys(map).forEach(function(dateStr){
+        if (dateStr.slice(0, 7) === prefix) count += map[dateStr].filter(function(t){ return t.status !== "done"; }).length;
       });
+      var cell = el("button", {style:"text-align:left;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--surface);cursor:pointer;" + (k === 0 ? "box-shadow:inset 0 0 0 2px var(--moss);" : "")}, [
+        el("div", {style:"font-weight:600;font-size:14px;margin-bottom:4px;"}, [MONTH_NAMES[d.getMonth()] + (d.getFullYear() !== now.getFullYear() ? " " + d.getFullYear() : "")]),
+        el("div", {style:"font-size:12px;color:var(--ink-faint);"}, [count + (count===1 ? " open task" : " open tasks")])
+      ]);
+      cell.addEventListener("click", (function(y, m){ return function(){
+        yearlyPlan.mode = "month";
+        yearlyPlan.anchor = isoDate(y, m, 1);
+        renderShell();
+      }; })(d.getFullYear(), d.getMonth()+1));
       grid.appendChild(cell);
-    });
+    }
     container.appendChild(grid);
   }
 
@@ -3121,6 +3154,7 @@
     var wasHidden = overlay.hidden;
     var scroll = content.scrollTop;
     content.innerHTML = "";
+    content.removeAttribute("data-tips-month"); // set by the All tips sheet while it waits for a month to load
     var handle = el("div", {class:"sheet-handle", "aria-hidden":"true"});
     content.appendChild(handle);
     attachSheetDrag(handle, content);
