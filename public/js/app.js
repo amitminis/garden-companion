@@ -2408,8 +2408,15 @@
         el("h3", {}, ["Settings"]),
         el("button", {class:"modal-close", onclick:closeModal}, ["×"])
       ]));
-      var locInput = el("input", {type:"text", value:(s.location && s.location.label) || ""});
-      container.appendChild(el("div", {class:"field"}, [el("label", {}, ["Garden location"]), locInput]));
+      // A GPS-only location is saved as "Current location"; ask for a real
+      // name instead — it's what the AI uses to name the place (the
+      // coordinates stay, for weather and the measured climate).
+      var label = (s.location && s.location.label) || "";
+      var locInput = el("input", {type:"text", value: /^(current location|unspecified)$/i.test(label) ? "" : label, placeholder:"Town and country, e.g. Modi'in, Israel"});
+      container.appendChild(el("div", {class:"field"}, [
+        el("label", {}, ["Garden location"]), locInput,
+        el("div", {style:"font-size:12px;color:var(--ink-faint);margin-top:4px;"}, ["Used to time care guides and tips to your local climate" + (s.location && s.location.lat != null ? " (weather uses your saved GPS point)." : ".")])
+      ]));
 
       var days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
       var daySelect = el("select", {}, days.map(function(d){
@@ -2428,7 +2435,7 @@
       var saveBtn = el("button", {class:"btn btn-primary btn-sm"}, ["Save"]);
       saveBtn.addEventListener("click", async function(){
         saveBtn.disabled = true; saveBtn.textContent = "Saving…";
-        var loc = Object.assign({}, s.location, {label: locInput.value || "Unspecified"});
+        var loc = Object.assign({}, s.location, {label: locInput.value.trim() || label || "Unspecified"});
         try {
           await api("/settings", {method:"PATCH", body:{location:loc, photoCheckinDay:daySelect.value}});
         } catch(e){

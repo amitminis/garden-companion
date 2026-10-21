@@ -140,12 +140,12 @@ beta `server-side-fallback-2026-07-01`).
 
 Advice is grounded in the garden's real location: `lib/garden-context.js`
 builds a short context for every advice prompt (care guides, tips, photo and
-problem diagnoses, Ask, the daily weather alert) — the place name (reverse
-geocoded when the saved label is just "Current location"), coordinates, and
+problem diagnoses, Ask, the daily weather alert) — the place name from
+Settings (a GPS-only "Current location" goes in as coordinates alone), coordinates, and
 month-by-month highs/lows/rain plus frost nights measured over the past year
 (Open-Meteo archive API) — with an instruction to time everything to the
-local climate (no frost protection where it doesn't freeze). Place and
-climate are cached in the `garden_cache` table (created on first use; also
+local climate (no frost protection where it doesn't freeze). The climate
+summary is cached in the `garden_cache` table (created on first use; also
 in `schema.sql`), climate refreshed every 90 days.
 
 Care guides ask for 6-12 schedule entries covering the whole year, and
