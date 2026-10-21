@@ -5,6 +5,13 @@
 (function(){
   "use strict";
 
+  // Every user-facing string goes through tr() (public/js/i18n.js): the
+  // English text is the key, translated to the gardener's language.
+  // Constant tables mark their strings with N_() and translate where they
+  // render, so a language switch never needs a reload.
+  var tr = I18N.t, trn = I18N.tn;
+  function N_(s){ return s; }
+
   // ---------------------------------------------------------------
   // Utilities
   // ---------------------------------------------------------------
@@ -24,7 +31,7 @@
     return e;
   }
   function fmtDate(d){
-    try { return new Date(d).toLocaleDateString(undefined, {weekday:"short", month:"short", day:"numeric"}); }
+    try { return new Date(d).toLocaleDateString(I18N.locale(), {weekday:"short", month:"short", day:"numeric"}); }
     catch(e){ return d; }
   }
   function todayISO(){
@@ -76,7 +83,7 @@
   // fall back to the coordinates or ask the user to type a location.
   async function reverseGeocodeCity(lat, lon){
     try {
-      var res = await fetch("https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=" + lat + "&longitude=" + lon + "&localityLanguage=en");
+      var res = await fetch("https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=" + lat + "&longitude=" + lon + "&localityLanguage=" + I18N.lang());
       if (!res.ok) return "";
       var data = await res.json();
       var city = data.city || data.locality || "";
@@ -86,6 +93,13 @@
       if (region && country) return region + ", " + country;
       return country || "";
     } catch(e){ return ""; }
+  }
+
+  // A saved location label for display: the GPS-only sentinel is
+  // translated, "Unspecified" shows as nothing.
+  function placeLabel(label){
+    if (!label || /^unspecified$/i.test(label)) return "";
+    return /^current location$/i.test(label) ? tr("Current location") : label;
   }
 
   // ---------------------------------------------------------------
@@ -113,17 +127,23 @@
   // sampleErrorMessage / imageAnalysisNotice machinery). Whatever the
   // reason, the photo itself is always saved server-side — an upload is
   // never lost just because analysis couldn't run.
-  var PHOTO_ONLY_MESSAGE = "Photo saved — analysis isn't available right now, but the photo itself is kept.";
-  var ANALYZE_FAILED_MESSAGE = "Couldn't analyze that — try again.";
-  var ANALYZE_FAILED_PHOTO_KEPT_MESSAGE = "Couldn't analyze that — the photo is saved, but try again for a diagnosis.";
+  var PHOTO_ONLY_MESSAGE = N_("Photo saved — analysis isn't available right now, but the photo itself is kept.");
+  var ANALYZE_FAILED_MESSAGE = N_("Couldn't analyze that — try again.");
+  var ANALYZE_FAILED_PHOTO_KEPT_MESSAGE = N_("Couldn't analyze that — the photo is saved, but try again for a diagnosis.");
   var lastAnalysisMessage = null;
 
   // ---------------------------------------------------------------
   // State
   // ---------------------------------------------------------------
   var state = { settings:null, plants:[], tasks:[], weather:null, section:"tasks" };
-  var MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-  var DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+  // Month and weekday names in the gardener's language (Intl), 0-based.
+  // 2 Jan 2000 was a Sunday.
+  function monthName(m){ return new Date(2000, m, 1).toLocaleDateString(I18N.locale(), {month:"long"}); }
+  function monthShort(m){ return new Date(2000, m, 1).toLocaleDateString(I18N.locale(), {month:"short"}); }
+  function dayName(d){ return new Date(2000, 0, 2 + d).toLocaleDateString(I18N.locale(), {weekday:"long"}); }
+  function dayShort(d){ return new Date(2000, 0, 2 + d).toLocaleDateString(I18N.locale(), {weekday: I18N.isRTL() ? "narrow" : "short"}); }
+  // "Oct 21" / "21 באוק׳"
+  function shortDate(d){ return d.toLocaleDateString(I18N.locale(), {month:"short", day:"numeric"}); }
   // A fixed categorical palette so each plant gets a stable, distinguishable
   // color (used as calendar dots and list-row markers) — legible on both light
   // and dark grounds. Assigned by the plant's position in state.plants, so a
@@ -168,18 +188,19 @@
     return "sun";
   }
 
-  // What kind of job a task is, guessed from its wording — drives the row
-  // icon, the library card's "next care" line and the weekly summary.
+  // What kind of job a task is, guessed from its wording (English or
+  // Hebrew) — drives the row icon, the plant rim's "next care" line and
+  // the weekly summary.
   var TASK_CATEGORIES = [
-    {key:"water",   icon:"drop",     emoji:"💧", verb:"watered",      re:/water|irrigat|soak|drip/},
-    {key:"prune",   icon:"scissors", emoji:"✂️", verb:"pruned",       re:/prun|trim|deadhead|cut back|pinch/},
-    {key:"harvest", icon:"basket",   emoji:"🧺", verb:"harvested",    re:/harvest|pick |collect/},
-    {key:"photo",   icon:"camera",   emoji:"📷", verb:"took photos",  re:/photo|picture|check-in|checkin/},
-    {key:"treat",   icon:"bug",      emoji:"🐛", verb:"treated pests & problems", re:/pest|aphid|bug|spray|fung|mildew|yellow|disease|rot|slug/},
-    {key:"plant",   icon:"seedling", emoji:"🌱", verb:"planted & sowed", re:/sow|seed|plant |bulb|transplant|pot up|repot/},
-    {key:"feed",    icon:"leaf",     emoji:"🍃", verb:"fed & mulched", re:/fertili|feed|compost|mulch|manure/}
+    {key:"water",   label:N_("water"),   icon:"drop",     emoji:"💧", verb:N_("watered"),      re:/water|irrigat|soak|drip|השק|טפטוף|הרטב/},
+    {key:"prune",   label:N_("prune"),   icon:"scissors", emoji:"✂️", verb:N_("pruned"),       re:/prun|trim|deadhead|cut back|pinch|גיזום|לגזום|גזמו|גזום|קיצוץ|דילול/},
+    {key:"harvest", label:N_("harvest"), icon:"basket",   emoji:"🧺", verb:N_("harvested"),    re:/harvest|pick |collect|קטיף|לקטוף|קטפו|קציר|אסיף/},
+    {key:"photo",   label:N_("photo"),   icon:"camera",   emoji:"📷", verb:N_("took photos"),  re:/photo|picture|check-in|checkin|צילום|תמונה|צלמו|לצלם/},
+    {key:"treat",   label:N_("treat"),   icon:"bug",      emoji:"🐛", verb:N_("treated pests & problems"), re:/pest|aphid|bug|spray|fung|mildew|yellow|disease|rot|slug|מזיק|כנימ|ריסוס|לרסס|רססו|פטרי|קמחון|הצהב|מחל|ריקבון|שבלול|חילזון/},
+    {key:"plant",   label:N_("planting"),   icon:"seedling", emoji:"🌱", verb:N_("planted & sowed"), re:/sow|seed|plant |bulb|transplant|pot up|repot|זריעה|לזרוע|זרעו|שתיל|לשתול|שתילה|פקע|העתק/},
+    {key:"feed",    label:N_("feed"),    icon:"leaf",     emoji:"🍃", verb:N_("fed & mulched"), re:/fertili|feed|compost|mulch|manure|דשן|דישון|קומפוסט|חיפוי|זבל|הזנה/}
   ];
-  var OTHER_CATEGORY = {key:"other", icon:"leaf", emoji:"🍃", verb:"did other jobs"};
+  var OTHER_CATEGORY = {key:"other", label:N_("task"), icon:"leaf", emoji:"🍃", verb:N_("did other jobs")};
   function taskCategory(t){
     var text = " " + (t.title || "").toLowerCase() + " ";
     for (var i=0;i<TASK_CATEGORIES.length;i++){ if (TASK_CATEGORIES[i].re.test(text)) return TASK_CATEGORIES[i]; }
@@ -189,13 +210,15 @@
 
   var TYPE_EMOJI = {tree:"🌳", bush:"🪴", flower:"🌸", vegetable:"🥕", herb:"🌿", other:"🌱"};
   function typeEmoji(type){ return TYPE_EMOJI[type] || TYPE_EMOJI.other; }
+  var TYPE_LABELS = {tree:N_("Tree"), bush:N_("Bush"), flower:N_("Flower"), vegetable:N_("Vegetable"), herb:N_("Herb"), other:N_("Other")};
+  function typeLabel(type){ return TYPE_LABELS[type] ? tr(TYPE_LABELS[type]) : (type || ""); }
 
   // Knowledge score -> a friendlier growth "level" (same thresholds as
   // gradeLabelFor).
   function plantLevel(score){
-    if (score >= 80) return {emoji:"🌸", name:"Bloom"};
-    if (score >= 50) return {emoji:"🌿", name:"Sprout"};
-    return {emoji:"🌱", name:"Seedling"};
+    if (score >= 80) return {emoji:"🌸", name:tr("Bloom")};
+    if (score >= 50) return {emoji:"🌿", name:tr("Sprout")};
+    return {emoji:"🌱", name:tr("Seedling")};
   }
 
   // Whole days from today to an ISO date (negative = past).
@@ -206,11 +229,11 @@
   function relativeDay(iso){
     if (!iso) return "";
     var n = daysFromToday(iso);
-    if (n < -1) return Math.abs(n) + " days overdue";
-    if (n === -1) return "yesterday";
-    if (n === 0) return "today";
-    if (n === 1) return "tomorrow";
-    if (n < 7) return "in " + n + " days";
+    if (n < -1) return trn(Math.abs(n), "1 day overdue", "{n} days overdue");
+    if (n === -1) return tr("yesterday");
+    if (n === 0) return tr("today");
+    if (n === 1) return tr("tomorrow");
+    if (n < 7) return trn(n, "in 1 day", "in {n} days");
     return fmtDate(iso);
   }
 
@@ -266,10 +289,16 @@
       state.settings = await api("/settings");
     } catch(e){
       document.getElementById("boot").innerHTML =
-        '<div class="onboard-card card" style="text-align:center;"><h2>Couldn\'t reach the garden</h2>'+
-        '<p class="lead">Garden Companion can\'t reach its saved garden data right now. Check your connection and try again.</p>'+
-        '<button class="btn btn-primary" onclick="location.reload()">Try again</button></div>';
+        '<div class="onboard-card card" style="text-align:center;"><h2>' + tr("Couldn't reach the garden") + '</h2>'+
+        '<p class="lead">' + tr("Garden Companion can't reach its saved garden data right now. Check your connection and try again.") + '</p>'+
+        '<button class="btn btn-primary" onclick="location.reload()">' + tr("Try again") + '</button></div>';
       return;
+    }
+
+    // The saved language wins over this device's last-used one.
+    if (state.settings && state.settings.language && state.settings.language !== I18N.lang()){
+      I18N.setLang(state.settings.language);
+      applyStaticText();
     }
 
     document.getElementById("boot").hidden = true;
@@ -343,21 +372,23 @@
   // wizard and the dashboard's "+ Add a plant" modal — identifying a plant
   // is a pick-from-a-list wizard now, not a free-text box parsed by AI.
   function typeOptions(selectedType){
-    return ["tree","bush","flower","vegetable","herb","other"].map(function(t){
-      var o = el("option", {value:t}, [t.charAt(0).toUpperCase() + t.slice(1)]);
-      if (selectedType === t) o.setAttribute("selected","selected");
+    return ["tree","bush","flower","vegetable","herb","other"].map(function(ty){
+      var o = el("option", {value:ty}, [typeLabel(ty)]);
+      if (selectedType === ty) o.setAttribute("selected","selected");
       return o;
     });
   }
-  var SPOT_OPTIONS = ["Front yard","Backyard","Side yard","Patio / pots","Raised bed","Greenhouse","Balcony","Windowsill"];
+  // Option values are saved in English (a stable key the server and the
+  // "Not sure" checks rely on) and shown translated — see optLabel().
+  var SPOT_OPTIONS = [N_("Front yard"),N_("Backyard"),N_("Side yard"),N_("Patio / pots"),N_("Raised bed"),N_("Greenhouse"),N_("Balcony"),N_("Windowsill")];
   function spotPicker(existingSpot){
     var isCustom = !!existingSpot && SPOT_OPTIONS.indexOf(existingSpot) === -1;
-    var select = el("select", {}, [el("option", {value:""}, ["Choose a spot…"])].concat(
-      SPOT_OPTIONS.map(function(s){ var o = el("option", {value:s}, [s]); if (existingSpot===s) o.setAttribute("selected","selected"); return o; }),
-      [el("option", {value:"__custom__"}, ["Other / describe…"])]
+    var select = el("select", {}, [el("option", {value:""}, [tr("Choose a spot…")])].concat(
+      SPOT_OPTIONS.map(function(s){ var o = el("option", {value:s}, [tr(s)]); if (existingSpot===s) o.setAttribute("selected","selected"); return o; }),
+      [el("option", {value:"__custom__"}, [tr("Other / describe…")])]
     ));
     if (isCustom) select.value = "__custom__";
-    var customInput = el("input", {type:"text", placeholder:"Describe the spot", value: isCustom ? existingSpot : "", style: isCustom ? "margin-top:6px;" : "display:none;margin-top:6px;"});
+    var customInput = el("input", {type:"text", placeholder:tr("Describe the spot"), value: isCustom ? existingSpot : "", style: isCustom ? "margin-top:6px;" : "display:none;margin-top:6px;"});
     select.addEventListener("change", function(){
       customInput.style.display = select.value === "__custom__" ? "" : "none";
     });
@@ -367,13 +398,16 @@
   // Dropdown option lists for the plant wizard's "get to know it" fields —
   // plain option pickers (no free-text) since these values feed straight
   // into the AI care-card prompt as clean short labels.
-  var AGE_OPTIONS = ["Just planted","Less than 1 year","1–2 years","3–5 years","More than 5 years","Not sure"];
-  var SUN_OPTIONS = ["Full sun (6+ hrs)","Partial sun (4–6 hrs)","Partial shade (2–4 hrs)","Full shade (under 2 hrs)","Not sure"];
-  var WATERING_OPTIONS = ["Drip irrigation","Sprinkler","Hand watering","Rain-fed only","Not sure"];
-  var GROUND_OPTIONS = ["Clay soil","Sandy soil","Loamy soil","Raised bed","Pot / container","Not sure"];
+  var AGE_OPTIONS = [N_("Just planted"),N_("Less than 1 year"),N_("1–2 years"),N_("3–5 years"),N_("More than 5 years"),N_("Not sure")];
+  var SUN_OPTIONS = [N_("Full sun (6+ hrs)"),N_("Partial sun (4–6 hrs)"),N_("Partial shade (2–4 hrs)"),N_("Full shade (under 2 hrs)"),N_("Not sure")];
+  var WATERING_OPTIONS = [N_("Drip irrigation"),N_("Sprinkler"),N_("Hand watering"),N_("Rain-fed only"),N_("Not sure")];
+  var GROUND_OPTIONS = [N_("Clay soil"),N_("Sandy soil"),N_("Loamy soil"),N_("Raised bed"),N_("Pot / container"),N_("Not sure")];
+  // A saved value shown in the gardener's language: preset option values
+  // (and plant types) are translated, free text is shown as typed.
+  function optLabel(v){ return v ? tr(v) : v; }
   function simpleSelect(options, selected, placeholder){
-    var opts = [el("option", {value:""}, [placeholder || "Choose…"])].concat(options.map(function(o){
-      var opt = el("option", {value:o}, [o]);
+    var opts = [el("option", {value:""}, [placeholder || tr("Choose…")])].concat(options.map(function(o){
+      var opt = el("option", {value:o}, [tr(o)]);
       if (o === selected) opt.setAttribute("selected","selected");
       return opt;
     }));
@@ -405,56 +439,79 @@
 
   function stepWelcome(){
     return el("div", {class:"onboard-card card"}, [
-      el("div", {class:"onboard-step-label"}, ["Welcome"]),
-      el("h2", {}, ["Let's set up your garden"]),
-      el("p", {class:"lead"}, ["I'll ask where you're gardening, get to know what you're growing, and take a look at a few photos. After that I'll check on things every day — weather, what's due for pruning or sowing, and how your plants are doing."]),
-      el("button", {class:"btn btn-primary", onclick:function(){ onboard.step=1; renderOnboarding(); }}, ["Start setup →"])
+      languagePicker(function(){ renderOnboarding(); }),
+      el("div", {class:"onboard-step-label"}, [tr("Welcome")]),
+      el("h2", {}, [tr("Let's set up your garden")]),
+      el("p", {class:"lead"}, [tr("I'll ask where you're gardening, get to know what you're growing, and take a look at a few photos. After that I'll check on things every day — weather, what's due for pruning or sowing, and how your plants are doing.")]),
+      el("button", {class:"btn btn-primary", onclick:function(){ onboard.step=1; renderOnboarding(); }}, [tr("Start setup →")])
     ]);
+  }
+
+  // עברית / English toggle (onboarding's first screen and Settings). The
+  // choice is saved to settings, since the server writes care guides, tips
+  // and diagnoses in it too.
+  var LANGUAGES = [["he","עברית"],["en","English"]];
+  function setLanguage(lang){
+    if (lang === I18N.lang()) return;
+    I18N.setLang(lang);
+    applyStaticText();
+    tipsByMonth = {}; // tips are written in a language — fetch them again
+    state.settings = Object.assign({}, state.settings, {language:lang});
+    api("/settings", {method:"PATCH", body:{language:lang}}).catch(function(){});
+  }
+  function languagePicker(onChange){
+    var seg = el("div", {class:"seg lang-seg", role:"group", "aria-label":tr("Language")});
+    LANGUAGES.forEach(function(l){
+      var b = el("button", {class: I18N.lang() === l[0] ? "active" : "", "aria-pressed": I18N.lang() === l[0] ? "true" : "false", lang:l[0]}, [l[1]]);
+      b.addEventListener("click", function(){ setLanguage(l[0]); onChange(); });
+      seg.appendChild(b);
+    });
+    return seg;
   }
 
   function stepLocation(){
     var card = el("div", {class:"onboard-card card"}, [
       progressDots(0),
-      el("div", {class:"onboard-step-label"}, ["Step 1 of 3"]),
-      el("h2", {}, ["Where's your garden?"]),
-      el("p", {class:"lead"}, ["This sets your weather, frost dates, and planting calendar."])
+      el("div", {class:"onboard-step-label"}, [tr("Step {n} of {total}", {n:1, total:3})]),
+      el("h2", {}, [tr("Where's your garden?")]),
+      el("p", {class:"lead"}, [tr("This sets your weather, local seasons and planting calendar.")])
     ]);
     var status = el("div", {class:"thinking", style:"margin-bottom:12px;"});
     var confirmBox = el("div", {});
-    var manual = el("input", {type:"text", placeholder:"City, region or country", value: onboard.location && onboard.location.label || ""});
-    var gpsBtn = el("button", {class:"btn", style:"margin-bottom:14px;"}, ["Use my current location"]);
+    var manual = el("input", {type:"text", placeholder:tr("Town and country, e.g. Modi'in, Israel"), value: onboard.location && onboard.location.label || ""});
+    var gpsBtn = el("button", {class:"btn", style:"margin-bottom:14px;"}, [tr("Use my current location")]);
     gpsBtn.addEventListener("click", function(){
-      if (!navigator.geolocation){ status.textContent = "Location services aren't available here — type it in below."; return; }
+      if (!navigator.geolocation){ status.textContent = tr("Location services aren't available here — type it in below."); return; }
       confirmBox.innerHTML = "";
-      status.textContent = "Locating…";
+      status.textContent = tr("Locating…");
       navigator.geolocation.getCurrentPosition(async function(pos){
         var lat = pos.coords.latitude, lon = pos.coords.longitude;
-        status.textContent = "Got your coordinates — looking up the city name…";
+        status.textContent = tr("Got your coordinates — looking up the city name…");
         var cityLabel = await reverseGeocodeCity(lat, lon);
         status.textContent = "";
         if (!cityLabel){
-          status.textContent = "Got your coordinates, but couldn't look up a city name — type one in below.";
+          status.textContent = tr("Got your coordinates, but couldn't look up a city name — type one in below.");
           return;
         }
         // Don't commit the detected city as the location yet — show it and
         // let the user approve it (or fix it) before it's saved.
         confirmBox.innerHTML = "";
         confirmBox.appendChild(el("div", {class:"card", style:"padding:12px 14px;margin-bottom:14px;"}, [
-          el("div", {style:"font-size:12.5px;color:var(--ink-faint);margin-bottom:4px;"}, ["We found:"]),
+          el("div", {style:"font-size:12.5px;color:var(--ink-faint);margin-bottom:4px;"}, [tr("We found:")]),
           el("div", {style:"font-weight:600;font-size:14.5px;margin-bottom:10px;"}, [cityLabel]),
           el("div", {class:"row", style:"gap:8px;"}, [
             (function(){
-              var useBtn = el("button", {class:"btn btn-primary btn-sm"}, ["✓ Use this"]);
+              var useBtn = el("button", {class:"btn btn-primary btn-sm"}, [tr("✓ Use this")]);
               useBtn.addEventListener("click", function(){
                 onboard.location = { label: cityLabel, lat: lat, lon: lon };
                 manual.value = cityLabel;
                 confirmBox.innerHTML = "";
-                status.textContent = "Using " + cityLabel + ".";
+                status.textContent = tr("Using {place}.", {place:cityLabel});
               });
               return useBtn;
             })(),
             (function(){
-              var editBtn = el("button", {class:"btn btn-ghost btn-sm"}, ["Edit manually"]);
+              var editBtn = el("button", {class:"btn btn-ghost btn-sm"}, [tr("Edit manually")]);
               editBtn.addEventListener("click", function(){
                 manual.value = cityLabel;
                 manual.focus();
@@ -466,17 +523,17 @@
           ])
         ]));
       }, function(){
-        status.textContent = "Couldn't get your location — type it in below instead.";
+        status.textContent = tr("Couldn't get your location — type it in below instead.");
       }, {timeout:8000});
     });
     card.appendChild(gpsBtn);
     card.appendChild(status);
     card.appendChild(confirmBox);
     card.appendChild(el("div", {class:"field"}, [
-      el("label", {}, ["Or enter it manually"]),
+      el("label", {}, [tr("Or enter it manually")]),
       manual
     ]));
-    var nextBtn = el("button", {class:"btn btn-primary"}, ["Continue →"]);
+    var nextBtn = el("button", {class:"btn btn-primary"}, [tr("Continue →")]);
     nextBtn.addEventListener("click", function(){
       if (!onboard.location) onboard.location = {};
       onboard.location.label = manual.value || onboard.location.label || "Unspecified";
@@ -484,7 +541,7 @@
       renderOnboarding();
     });
     var row = el("div", {class:"row", style:"justify-content:space-between;margin-top:6px;"}, [
-      el("button", {class:"btn btn-ghost", onclick:function(){ onboard.step=0; renderOnboarding(); }}, ["← Back"]),
+      el("button", {class:"btn btn-ghost", onclick:function(){ onboard.step=0; renderOnboarding(); }}, [tr("← Back")]),
       nextBtn
     ]);
     card.appendChild(row);
@@ -495,17 +552,17 @@
   function stepStartLibrary(){
     var card = el("div", {class:"onboard-card card"}, [
       progressDots(1, 3),
-      el("div", {class:"onboard-step-label"}, ["Step 2 of 3"]),
-      el("h2", {}, ["Want to start adding plants to your garden now?"]),
-      el("p", {class:"lead"}, ["I'll guide you through adding each plant with a short form — or you can skip this and do it anytime from the My garden section."])
+      el("div", {class:"onboard-step-label"}, [tr("Step {n} of {total}", {n:2, total:3})]),
+      el("h2", {}, [tr("Want to start adding plants to your garden now?")]),
+      el("p", {class:"lead"}, [tr("I'll guide you through adding each plant with a short form — or you can skip this and do it anytime from the My garden section.")])
     ]);
-    var yesBtn = el("button", {class:"btn btn-primary"}, ["Yes, let's add plants"]);
+    var yesBtn = el("button", {class:"btn btn-primary"}, [tr("Yes, let's add plants")]);
     yesBtn.addEventListener("click", function(){ onboard.step=3; onboard.wiz=null; renderOnboarding(); });
-    var noBtn = el("button", {class:"btn btn-ghost"}, ["Not now"]);
+    var noBtn = el("button", {class:"btn btn-ghost"}, [tr("Not now")]);
     noBtn.addEventListener("click", function(){ onboard.step=4; renderOnboarding(); });
     card.appendChild(el("div", {class:"row", style:"gap:10px;margin-top:6px;"}, [yesBtn, noBtn]));
     card.appendChild(el("div", {class:"row", style:"justify-content:flex-start;margin-top:16px;"}, [
-      el("button", {class:"btn btn-ghost", onclick:function(){ onboard.step=1; renderOnboarding(); }}, ["← Back"])
+      el("button", {class:"btn btn-ghost", onclick:function(){ onboard.step=1; renderOnboarding(); }}, [tr("← Back")])
     ]));
     return card;
   }
@@ -521,22 +578,22 @@
 
   function stepFinish(){
     var card = el("div", {class:"onboard-card card"}, [
-      el("div", {class:"onboard-step-label"}, ["All set"]),
-      el("h2", {}, ["All set"]),
+      el("div", {class:"onboard-step-label"}, [tr("All set")]),
+      el("h2", {}, [tr("All set")]),
       el("p", {class:"lead"}, [onboard.addedAny
-        ? "Your garden is saved — care guides and yearly schedules are ready for what you've added."
-        : "Your garden is set up. Add plants anytime from the My garden section."])
+        ? tr("Your garden is saved — care guides and yearly schedules are ready for what you've added.")
+        : tr("Your garden is set up. Add plants anytime from the My garden section.")])
     ]);
-    var finishBtn = el("button", {class:"btn btn-primary"}, ["Go to my garden →"]);
+    var finishBtn = el("button", {class:"btn btn-primary"}, [tr("Go to my garden →")]);
     finishBtn.addEventListener("click", async function(){
       finishBtn.disabled = true;
       try {
-        await api("/settings", {method:"PATCH", body:{onboarded:true}});
-        state.settings = Object.assign({}, state.settings, {onboarded:true});
+        await api("/settings", {method:"PATCH", body:{onboarded:true, language:I18N.lang()}});
+        state.settings = Object.assign({}, state.settings, {onboarded:true, language:I18N.lang()});
         await loadGardenData();
       } catch(e){
         finishBtn.disabled = false;
-        finishBtn.textContent = "Couldn't reach the garden — try again";
+        finishBtn.textContent = tr("Couldn't reach the garden — try again");
         return;
       }
       document.getElementById("app").innerHTML = "";
@@ -566,22 +623,22 @@
   }
   function wizardFieldMeta(){
     return [
-      {key:"name", question:"What's this plant called?", kind:"text", required:true, placeholder:"e.g. Meyer lemon tree"},
-      {key:"type", question:"What type of plant is it?", kind:"type"},
-      {key:"spot", question:"Where in the garden is it?", kind:"spot"},
-      {key:"species", question:"Species or variety?", kind:"text", placeholder:"Optional — e.g. Citrus × meyeri"},
-      {key:"age", question:"About how old is it?", kind:"select", options:AGE_OPTIONS},
-      {key:"sunExposure", question:"How much sun does that spot get?", kind:"select", options:SUN_OPTIONS},
-      {key:"watering", question:"How do you water it?", kind:"select", options:WATERING_OPTIONS},
-      {key:"groundType", question:"What's the ground like there?", kind:"select", options:GROUND_OPTIONS},
-      {key:"notes", question:"Anything else worth noting?", kind:"textarea", placeholder:"Optional"}
+      {key:"name", question:tr("What's this plant called?"), kind:"text", required:true, placeholder:tr("e.g. Meyer lemon tree")},
+      {key:"type", question:tr("What type of plant is it?"), kind:"type"},
+      {key:"spot", question:tr("Where in the garden is it?"), kind:"spot"},
+      {key:"species", question:tr("Species or variety?"), kind:"text", placeholder:tr("Optional — e.g. Citrus × meyeri")},
+      {key:"age", question:tr("About how old is it?"), kind:"select", options:AGE_OPTIONS},
+      {key:"sunExposure", question:tr("How much sun does that spot get?"), kind:"select", options:SUN_OPTIONS},
+      {key:"watering", question:tr("How do you water it?"), kind:"select", options:WATERING_OPTIONS},
+      {key:"groundType", question:tr("What's the ground like there?"), kind:"select", options:GROUND_OPTIONS},
+      {key:"notes", question:tr("Anything else worth noting?"), kind:"textarea", placeholder:tr("Optional")}
     ];
   }
   function wizardTotalSteps(){ return wizardFieldMeta().length + 3; } // fields + photos + review + result
   function wizardProgress(step, total){
     var pct = Math.round((Math.min(step,total-1)/(total-1))*100);
     return el("div", {style:"margin-bottom:14px;"}, [
-      el("div", {style:"font-size:11.5px;color:var(--ink-faint);margin-bottom:4px;"}, ["Step " + (Math.min(step,total-1)+1) + " of " + total]),
+      el("div", {style:"font-size:11.5px;color:var(--ink-faint);margin-bottom:4px;"}, [tr("Step {n} of {total}", {n:Math.min(step,total-1)+1, total:total})]),
       el("div", {class:"grade-track"}, [el("div", {class:"grade-fill", style:"width:" + pct + "%;"})])
     ]);
   }
@@ -614,7 +671,7 @@
       spot = spotPicker(wiz.spot);
       card.appendChild(el("div", {class:"field"}, [spot.select, spot.customInput]));
     } else if (field.kind === "select"){
-      input = simpleSelect(field.options, wiz[field.key], "Not sure / skip");
+      input = simpleSelect(field.options, wiz[field.key], tr("Not sure / skip"));
       card.appendChild(el("div", {class:"field"}, [input]));
     }
 
@@ -628,16 +685,16 @@
 
     var row = el("div", {class:"row", style:"justify-content:space-between;margin-top:14px;"});
     if (wiz.step > 0){
-      var backBtn = el("button", {class:"btn btn-ghost"}, ["← Back"]);
+      var backBtn = el("button", {class:"btn btn-ghost"}, [tr("← Back")]);
       backBtn.addEventListener("click", function(){ wiz[field.key] = readValue(); wiz.step--; opts.rerender(); });
       row.appendChild(backBtn);
     } else {
       row.appendChild(el("div", {}));
     }
-    var nextBtn = el("button", {class:"btn btn-primary"}, ["Next →"]);
+    var nextBtn = el("button", {class:"btn btn-primary"}, [tr("Next →")]);
     nextBtn.addEventListener("click", function(){
       var val = readValue();
-      if (field.required && !val){ formError.textContent = "This one's required."; return; }
+      if (field.required && !val){ formError.textContent = tr("This one's required."); return; }
       wiz[field.key] = val;
       wiz.step++;
       opts.rerender();
@@ -650,8 +707,8 @@
   function wizardPhotosStep(wiz, opts){
     var card = el("div", {class:"onboard-card card"});
     card.appendChild(wizardProgress(wiz.step, wizardTotalSteps()));
-    card.appendChild(el("h2", {style:"font-size:18px;"}, ["Add a photo or two?"]));
-    card.appendChild(el("p", {class:"lead", style:"font-size:13px;"}, ["Optional — helps build a more accurate care card and lets me track size and health over time. Up to 3."]));
+    card.appendChild(el("h2", {style:"font-size:18px;"}, [tr("Add a photo or two?")]));
+    card.appendChild(el("p", {class:"lead", style:"font-size:13px;"}, [tr("Optional — helps build a more accurate care card and lets me track size and health over time. Up to 3.")]));
 
     var thumbs = el("div", {style:"display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;"});
     function renderThumbs(){
@@ -659,7 +716,7 @@
       wiz.photos.forEach(function(dataUrl, i){
         var wrap = el("div", {style:"position:relative;"});
         wrap.appendChild(el("img", {src:dataUrl, style:"width:72px;height:72px;object-fit:cover;border-radius:8px;display:block;"}));
-        var rm = el("button", {class:"btn btn-ghost btn-sm", style:"position:absolute;top:-8px;right:-8px;padding:1px 6px;background:var(--surface);border-radius:50%;"}, ["✕"]);
+        var rm = el("button", {class:"btn btn-ghost btn-sm", style:"position:absolute;top:-8px;inset-inline-end:-8px;padding:1px 6px;background:var(--surface);border-radius:50%;"}, ["✕"]);
         rm.addEventListener("click", function(){ wiz.photos.splice(i,1); opts.rerender(); });
         wrap.appendChild(rm);
         thumbs.appendChild(wrap);
@@ -669,7 +726,7 @@
     card.appendChild(thumbs);
 
     if (wiz.photos.length < 3){
-      var pick = el("label", {class:"btn btn-sm"}, ["+ Add a photo"]);
+      var pick = el("label", {class:"btn btn-sm"}, [tr("+ Add a photo")]);
       var input = el("input", {type:"file", accept:"image/*", class:"sr-only"});
       pick.appendChild(input);
       input.addEventListener("change", async function(){
@@ -683,8 +740,8 @@
     }
 
     var row = el("div", {class:"row", style:"justify-content:space-between;margin-top:16px;"}, [
-      el("button", {class:"btn btn-ghost"}, ["← Back"]),
-      el("button", {class:"btn btn-primary"}, ["Next →"])
+      el("button", {class:"btn btn-ghost"}, [tr("← Back")]),
+      el("button", {class:"btn btn-primary"}, [tr("Next →")])
     ]);
     row.children[0].addEventListener("click", function(){ wiz.step--; opts.rerender(); });
     row.children[1].addEventListener("click", function(){ wiz.step++; opts.rerender(); });
@@ -694,20 +751,20 @@
 
   function wizardReviewRow(label, value){
     return value ? el("div", {class:"row", style:"justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--line);font-size:13px;"}, [
-      el("span", {style:"color:var(--ink-faint);"}, [label]), el("span", {style:"font-weight:600;text-align:right;"}, [value])
+      el("span", {style:"color:var(--ink-faint);"}, [label]), el("span", {style:"font-weight:600;text-align:end;"}, [value])
     ]) : null;
   }
 
   function wizardReviewStep(wiz, opts){
     var card = el("div", {class:"onboard-card card"});
     card.appendChild(wizardProgress(wiz.step, wizardTotalSteps()));
-    card.appendChild(el("h2", {style:"font-size:18px;"}, ["Ready to build " + (wiz.name||"this plant") + "'s card"]));
-    card.appendChild(el("p", {class:"lead", style:"font-size:13px;"}, ["Double-check what you've entered, then I'll put together its care guide."]));
+    card.appendChild(el("h2", {style:"font-size:18px;"}, [wiz.name ? tr("Ready to build {name}'s card", {name:wiz.name}) : tr("Ready to build this plant's card")]));
+    card.appendChild(el("p", {class:"lead", style:"font-size:13px;"}, [tr("Double-check what you've entered, then I'll put together its care guide.")]));
 
     var list = el("div", {style:"margin-bottom:12px;"});
-    [["Name",wiz.name],["Type",wiz.type],["Spot",wiz.spot],["Species",wiz.species],
-     ["Age",wiz.age],["Sun exposure",wiz.sunExposure],["Watering",wiz.watering],["Ground",wiz.groundType],
-     ["Notes",wiz.notes]].forEach(function(pair){
+    [[tr("Name"),wiz.name],[tr("Type"),typeLabel(wiz.type)],[tr("Spot"),optLabel(wiz.spot)],[tr("Species"),wiz.species],
+     [tr("Age"),optLabel(wiz.age)],[tr("Sun exposure"),optLabel(wiz.sunExposure)],[tr("Watering"),optLabel(wiz.watering)],[tr("Ground"),optLabel(wiz.groundType)],
+     [tr("Notes"),wiz.notes]].forEach(function(pair){
       var row = wizardReviewRow(pair[0], pair[1]);
       if (row) list.appendChild(row);
     });
@@ -724,16 +781,16 @@
     if (!wizReady.ready){
       card.appendChild(el("div", {class:"about-locked", style:"margin-bottom:12px;"}, [
         el("span", {"aria-hidden":"true"}, ["🔒"]),
-        el("span", {}, ["I'll need " + missingLabelList(wizReady.missing) + " before I can write its care guide. You can save it now and add those from its page later — or go back and fill them in."])
+        el("span", {}, [tr("I'll need {missing} before I can write its care guide. You can save it now and add those from its page later — or go back and fill them in.", {missing:missingLabelList(wizReady.missing)})])
       ]));
     }
 
     if (wiz.buildError) card.appendChild(el("div", {class:"empty", style:"margin-bottom:8px;"}, [wiz.buildError]));
 
     var row = el("div", {class:"row", style:"justify-content:space-between;margin-top:6px;"});
-    var backBtn = el("button", {class:"btn btn-ghost"}, ["← Back"]);
+    var backBtn = el("button", {class:"btn btn-ghost"}, [tr("← Back")]);
     backBtn.addEventListener("click", function(){ wiz.step--; opts.rerender(); });
-    var buildBtn = el("button", {class:"btn btn-primary"}, [wiz.building ? (wizReady.ready ? "Building…" : "Saving…") : (wizReady.ready ? "Build my plant card →" : "Save plant →")]);
+    var buildBtn = el("button", {class:"btn btn-primary"}, [wiz.building ? (wizReady.ready ? tr("Building…") : tr("Saving…")) : (wizReady.ready ? tr("Build my plant card →") : tr("Save plant →"))]);
     buildBtn.disabled = wiz.building;
     buildBtn.addEventListener("click", async function(){
       wiz.building = true; wiz.buildError = ""; opts.rerender();
@@ -759,7 +816,7 @@
           opts.rerender();
         } catch(e){
           wiz.building = false;
-          wiz.buildError = "Couldn't save this plant — try again.";
+          wiz.buildError = tr("Couldn't save this plant — try again.");
           opts.rerender();
         }
         return;
@@ -783,8 +840,8 @@
       } catch(e){
         wiz.building = false;
         wiz.buildError = wiz.plantId
-          ? "Saved, but couldn't build the care card just now — try again."
-          : "Couldn't save this plant — try again.";
+          ? tr("Saved, but couldn't build the care card just now — try again.")
+          : tr("Couldn't save this plant — try again.");
         opts.rerender();
       }
     });
@@ -798,12 +855,12 @@
     var card = el("div", {class:"onboard-card card"});
     var plant = wiz.result || {};
     var ok = plant && plant.careProfile;
-    card.appendChild(el("h2", {style:"font-size:18px;"}, [ok ? (wiz.name + "'s card is ready") : (wiz.name + " is saved")]));
+    card.appendChild(el("h2", {style:"font-size:18px;"}, [ok ? tr("{name}'s card is ready", {name:wiz.name}) : tr("{name} is saved", {name:wiz.name})]));
     if (wiz.savedWithoutGuide){
-      card.appendChild(el("p", {class:"lead"}, ["🔒 Its care guide unlocks once you add " + wiz.savedWithoutGuide + " — open " + wiz.name + " from My garden and tap “Care guide”."]));
+      card.appendChild(el("p", {class:"lead"}, [tr("🔒 Its care guide unlocks once you add {missing} — open {name} from My garden and tap “Care guide”.", {missing:wiz.savedWithoutGuide, name:wiz.name})]));
     } else if (ok){
       var cg = el("dl", {class:"care-grid", style:"margin-bottom:6px;"});
-      [["soil","Soil"],["sun","Sun"],["watering","Watering"],["pruning","Pruning"]].forEach(function(f){
+      [["soil",tr("Soil")],["sun",tr("Sun")],["watering",tr("Watering")],["pruning",tr("Pruning")]].forEach(function(f){
         if (plant.careProfile[f[0]]) cg.appendChild(el("div", {}, [el("dt",{},[f[1]]), el("dd",{},[plant.careProfile[f[0]]])]));
       });
       card.appendChild(cg);
@@ -813,17 +870,17 @@
         ]));
       }
     } else {
-      card.appendChild(el("p", {class:"lead"}, ["Saved — I couldn't finish building the care card just now, but you can retry anytime from its Care guide tab."]));
+      card.appendChild(el("p", {class:"lead"}, [tr("Saved — I couldn't finish building the care card just now, but you can retry anytime from its Care guide tab.")]));
     }
 
     var row = el("div", {class:"row", style:"justify-content:space-between;margin-top:16px;"});
-    var addAnotherBtn = el("button", {class:"btn btn-ghost"}, ["+ Add another plant"]);
+    var addAnotherBtn = el("button", {class:"btn btn-ghost"}, [tr("+ Add another plant")]);
     addAnotherBtn.addEventListener("click", function(){
       var fresh = createWizardState();
       Object.keys(fresh).forEach(function(k){ wiz[k] = fresh[k]; });
       opts.rerender();
     });
-    var doneBtn = el("button", {class:"btn btn-primary"}, ["Done"]);
+    var doneBtn = el("button", {class:"btn btn-primary"}, [tr("Done")]);
     doneBtn.addEventListener("click", function(){ opts.onExit(); });
     row.appendChild(addAnotherBtn);
     row.appendChild(doneBtn);
@@ -837,8 +894,8 @@
     function rerenderModal(){
       showModal(function(container){
         container.appendChild(el("div", {class:"modal-head"}, [
-          el("h3", {}, ["Add a plant"]),
-          el("button", {class:"modal-close", onclick:closeModal}, ["×"])
+          el("h3", {}, [tr("Add a plant")]),
+          el("button", {class:"modal-close", "aria-label":tr("Close"), onclick:closeModal}, ["×"])
         ]));
         container.appendChild(plantWizardCard(wiz, {
           rerender: rerenderModal,
@@ -922,10 +979,10 @@
   // back to general advice for that part). Species and a photo are
   // optional extras that make it sharper.
   var READINESS_FIELDS = [
-    {key:"spot",        label:"Where it's planted", todo:"tell me where it's planted", btn:"Add its spot"},
-    {key:"sunExposure", label:"Sun exposure",       todo:"add its sun exposure",       btn:"Add sun exposure"},
-    {key:"watering",    label:"How it's watered",   todo:"add how it's watered",       btn:"Add watering"},
-    {key:"groundType",  label:"Soil / ground",      todo:"add its soil type",          btn:"Add soil type"}
+    {key:"spot",        label:N_("Where it's planted"), todo:N_("tell me where it's planted"), btn:N_("Add its spot")},
+    {key:"sunExposure", label:N_("Sun exposure"),       todo:N_("add its sun exposure"),       btn:N_("Add sun exposure")},
+    {key:"watering",    label:N_("How it's watered"),   todo:N_("add how it's watered"),       btn:N_("Add watering")},
+    {key:"groundType",  label:N_("Soil / ground"),      todo:N_("add its soil type"),          btn:N_("Add soil type")}
   ];
   function plantFieldValue(p, key){
     if (key === "spot") return p.spot || "";
@@ -937,16 +994,16 @@
   function careReadiness(p){
     var items = READINESS_FIELDS.map(function(f){
       var v = plantFieldValue(p, f.key);
-      return {key:f.key, label:f.label, todo:f.todo, btn:f.btn, value:v, done:!!v};
+      return {key:f.key, label:tr(f.label), todo:tr(f.todo), btn:tr(f.btn), value:v, done:!!v};
     });
     var missing = items.filter(function(i){ return !i.done; });
     return {items:items, missing:missing, done:items.length - missing.length, total:items.length, ready:missing.length === 0};
   }
   // "sun exposure and soil / ground" — readable list of missing labels.
   function missingLabelList(missing){
-    var names = missing.map(function(m){ return m.label.charAt(0).toLowerCase() + m.label.slice(1); });
+    var names = missing.map(function(m){ return I18N.isRTL() ? m.label : m.label.charAt(0).toLowerCase() + m.label.slice(1); });
     if (names.length <= 1) return names.join("");
-    return names.slice(0, -1).join(", ") + " and " + names[names.length-1];
+    return tr("{list} and {last}", {list:names.slice(0, -1).join(", "), last:names[names.length-1]});
   }
 
   // How well the app knows a plant, 0–100 — driven by what the gardener has
@@ -964,32 +1021,32 @@
     });
     var hasGuide = !!(p.researched && p.careProfile);
     if (hasGuide) score += 25;
-    else if (readiness.ready) missing.push({key:"guide", text:"build its care guide"});
+    else if (readiness.ready) missing.push({key:"guide", text:tr("build its care guide")});
     var photos = p.photos || [];
     if (photos.length){
       score += 15;
       var days = (Date.now() - new Date(photos[photos.length-1].date).getTime()) / 86400000;
       if (days <= 28) score += 5;
-    } else missing.push({key:"photo", text:"add a photo"});
+    } else missing.push({key:"photo", text:tr("add a photo")});
     var age = plantFieldValue(p, "age");
-    if (age) score += isNotSure(age) ? 5 : 10; else missing.push({key:"age", text:"add its age"});
-    if (p.species) score += 5; else missing.push({key:"species", text:"add its species or variety"});
-    if (photos.length && days > 28) missing.push({key:"photo", text:"add a fresh photo"});
+    if (age) score += isNotSure(age) ? 5 : 10; else missing.push({key:"age", text:tr("add its age")});
+    if (p.species) score += 5; else missing.push({key:"species", text:tr("add its species or variety")});
+    if (photos.length && days > 28) missing.push({key:"photo", text:tr("add a fresh photo")});
     return {score:Math.min(100, score), missing:missing, reasons:missing.map(function(m){ return m.text; })};
   }
-  function gradeLabelFor(score){ return score>=80 ? "Well known" : (score>=50 ? "Getting there" : "Still learning"); }
+  function gradeLabelFor(score){ return score>=80 ? tr("Well known") : (score>=50 ? tr("Getting there") : tr("Still learning")); }
 
   // ---- Quick answer: one question, answered by tapping an option chip
   // (or "Other…" for free text). Used by the care-guide checklist, the
   // level "next step" and the profile's Add/Edit buttons. opts.chain walks
   // through every still-missing care-guide detail in a row. ----
   var QUICK_FIELDS = {
-    spot:        {q:"Where in the garden is it?", options:function(){ return SPOT_OPTIONS; }, other:"Describe the spot"},
-    sunExposure: {q:"How much sun does that spot get?", options:function(){ return SUN_OPTIONS; }, other:"e.g. morning sun, shade after 2pm"},
-    watering:    {q:"How do you water it?", options:function(){ return WATERING_OPTIONS; }, other:"e.g. drip twice a week"},
-    groundType:  {q:"What's the ground like there?", options:function(){ return GROUND_OPTIONS; }, other:"e.g. rocky clay, mulched"},
-    age:         {q:"About how old is it?", options:function(){ return AGE_OPTIONS; }, other:"e.g. planted spring 2021"},
-    species:     {q:"What species or variety is it?", options:null, other:"e.g. Hass avocado, Citrus × meyeri"}
+    spot:        {q:N_("Where in the garden is it?"), options:function(){ return SPOT_OPTIONS; }, other:N_("Describe the spot")},
+    sunExposure: {q:N_("How much sun does that spot get?"), options:function(){ return SUN_OPTIONS; }, other:N_("e.g. morning sun, shade after 2pm")},
+    watering:    {q:N_("How do you water it?"), options:function(){ return WATERING_OPTIONS; }, other:N_("e.g. drip twice a week")},
+    groundType:  {q:N_("What's the ground like there?"), options:function(){ return GROUND_OPTIONS; }, other:N_("e.g. rocky clay, mulched")},
+    age:         {q:N_("About how old is it?"), options:function(){ return AGE_OPTIONS; }, other:N_("e.g. planted spring 2021")},
+    species:     {q:N_("What species or variety is it?"), options:null, other:N_("e.g. Hass avocado, Citrus × meyeri")}
   };
   async function saveQuickAnswer(p, key, value, fromOption){
     if (key === "spot" || key === "species"){
@@ -1009,27 +1066,27 @@
     showModal(function(container){
       container.appendChild(el("div", {class:"modal-head"}, [
         el("h3", {style:"font-size:17px;"}, [p.name]),
-        el("button", {class:"modal-close", "aria-label":"Close", onclick:closeModal}, ["×"])
+        el("button", {class:"modal-close", "aria-label":tr("Close"), onclick:closeModal}, ["×"])
       ]));
-      var backBtn = el("button", {class:"btn btn-ghost btn-sm", style:"margin-bottom:10px;"}, ["← Back to plant"]);
+      var backBtn = el("button", {class:"btn btn-ghost btn-sm", style:"margin-bottom:10px;"}, [tr("← Back to plant")]);
       backBtn.addEventListener("click", function(){ openPlantDetail(p.id, {keepTab:true}); });
       container.appendChild(backBtn);
       if (opts.chain && opts.chainTotal > 1){
-        container.appendChild(el("div", {class:"onboard-step-label"}, ["Care guide details · " + opts.chainIndex + " of " + opts.chainTotal]));
+        container.appendChild(el("div", {class:"onboard-step-label"}, [tr("Care guide details · {n} of {total}", {n:opts.chainIndex, total:opts.chainTotal})]));
       }
-      container.appendChild(el("h2", {style:"font-size:19px;margin:2px 0 14px;"}, [field.q]));
+      container.appendChild(el("h2", {style:"font-size:19px;margin:2px 0 14px;"}, [tr(field.q)]));
       var status = el("div", {class:"thinking", style:"min-height:20px;margin-top:8px;"});
 
       async function commit(value, fromOption){
         value = String(value || "").trim();
         if (!value) return;
         container.querySelectorAll("button, input").forEach(function(b){ b.disabled = true; });
-        status.textContent = "Saving…";
+        status.textContent = tr("Saving…");
         var fresh;
         try { fresh = await saveQuickAnswer(p, key, value, fromOption); }
         catch(e){
           container.querySelectorAll("button, input").forEach(function(b){ b.disabled = false; });
-          status.textContent = "Couldn't save — try again.";
+          status.textContent = tr("Couldn't save — try again.");
           return;
         }
         buzz();
@@ -1040,15 +1097,15 @@
         var r = careReadiness(fresh);
         if (r.ready && !(fresh.researched && fresh.careProfile) && READINESS_FIELDS.some(function(f){ return f.key === key; })){
           plantDetailTab = "care";
-          showToast("✨ Care guide unlocked — ready to build!");
+          showToast(tr("✨ Care guide unlocked — ready to build!"));
         } else {
-          showToast("Saved");
+          showToast(tr("Saved"));
         }
         openPlantDetail(fresh.id, {keepTab:true});
       }
 
-      var otherInput = el("input", {type:"text", placeholder:field.other, value: current && (!field.options || field.options().indexOf(current) === -1) ? current : ""});
-      var otherSave = el("button", {class:"btn btn-primary"}, ["Save"]);
+      var otherInput = el("input", {type:"text", placeholder:tr(field.other), value: current && (!field.options || field.options().indexOf(current) === -1) ? current : ""});
+      var otherSave = el("button", {class:"btn btn-primary"}, [tr("Save")]);
       otherSave.addEventListener("click", function(){ commit(otherInput.value, false); });
       otherInput.addEventListener("keydown", function(e){ if (e.key === "Enter"){ e.preventDefault(); commit(otherInput.value, false); } });
       var otherRow = el("div", {class:"row", style:"gap:8px;flex-wrap:nowrap;margin-top:12px;"}, [el("div", {style:"flex:1;"}, [otherInput]), otherSave]);
@@ -1056,11 +1113,11 @@
       if (field.options){
         var chips = el("div", {class:"option-chips"});
         field.options().forEach(function(o){
-          var chip = el("button", {class:"option-chip" + (o === current ? " active" : "")}, [o]);
+          var chip = el("button", {class:"option-chip" + (o === current ? " active" : "")}, [tr(o)]);
           chip.addEventListener("click", function(){ commit(o, true); });
           chips.appendChild(chip);
         });
-        var otherChip = el("button", {class:"option-chip" + (otherInput.value ? " active" : "")}, ["Other…"]);
+        var otherChip = el("button", {class:"option-chip" + (otherInput.value ? " active" : "")}, [tr("Other…")]);
         otherChip.addEventListener("click", function(){ otherRow.hidden = false; otherInput.focus(); });
         chips.appendChild(otherChip);
         container.appendChild(chips);
@@ -1082,22 +1139,22 @@
     card.appendChild(el("div", {class:"ready-head"}, [
       el("span", {class:"ready-icon", "aria-hidden":"true"}, [r.ready ? "✨" : "🔒"]),
       el("div", {}, [
-        el("div", {class:"ready-title"}, [r.ready ? "Ready for a care guide" : "Care guide locked"]),
+        el("div", {class:"ready-title"}, [r.ready ? tr("Ready for a care guide") : tr("Care guide locked")]),
         el("div", {class:"ready-sub"}, [r.ready
-          ? "I know enough about its spot to write a guide for your garden, not just the species."
-          : "A good guide depends on where it grows. Tell me " + r.missing.length + " more thing" + (r.missing.length === 1 ? "" : "s") + " to unlock it."])
+          ? tr("I know enough about its spot to write a guide for your garden, not just the species.")
+          : trn(r.missing.length, "A good guide depends on where it grows. Tell me 1 more thing to unlock it.", "A good guide depends on where it grows. Tell me {n} more things to unlock it.")])
       ])
     ]));
-    var meter = el("div", {class:"ready-meter", role:"img", "aria-label": r.done + " of " + r.total + " details added"});
+    var meter = el("div", {class:"ready-meter", role:"img", "aria-label": tr("{n} of {total} details added", {n:r.done, total:r.total})});
     r.items.forEach(function(i){ meter.appendChild(el("span", {class:i.done ? "on" : ""})); });
-    card.appendChild(el("div", {class:"ready-meter-row"}, [meter, el("span", {class:"ready-count"}, [r.done + " of " + r.total])]));
+    card.appendChild(el("div", {class:"ready-meter-row"}, [meter, el("span", {class:"ready-count"}, [tr("{n} of {total}", {n:r.done, total:r.total})])]));
 
     var list = el("div", {class:"ready-list"});
     function row(item, optional){
       var b = el("button", {class:"ready-item" + (item.done ? " done" : "")}, [
         el("span", {class:"ready-check", "aria-hidden":"true", html: item.done ? icon("check") : ""}),
-        el("span", {class:"ready-label"}, [item.label, optional ? el("span", {class:"ready-opt"}, [" · optional"]) : null]),
-        el("span", {class:"ready-value"}, [item.done ? item.value : (optional ? "Add" : "Add →")])
+        el("span", {class:"ready-label"}, [item.label, optional ? el("span", {class:"ready-opt"}, [" · " + tr("optional")]) : null]),
+        el("span", {class:"ready-value"}, [item.done ? optLabel(item.value) : (optional ? tr("Add") : tr("Add →"))])
       ]);
       b.addEventListener("click", function(){
         if (item.key === "photo"){ plantDetailTab = "overview"; openPlantDetail(p.id, {keepTab:true}); var inp = document.querySelector("#modalContent .overview-photo-input"); if (inp) inp.click(); }
@@ -1106,35 +1163,35 @@
       list.appendChild(b);
     }
     r.items.forEach(function(i){ row(i, false); });
-    row({key:"species", label:"Species or variety", value:p.species || "", done:!!p.species}, true);
+    row({key:"species", label:tr("Species or variety"), value:p.species || "", done:!!p.species}, true);
     var nPhotos = (p.photos || []).length;
-    row({key:"photo", label:"A photo", value: nPhotos ? nPhotos + (nPhotos === 1 ? " photo" : " photos") : "", done: nPhotos > 0}, true);
+    row({key:"photo", label:tr("A photo"), value: nPhotos ? trn(nPhotos, "1 photo", "{n} photos") : "", done: nPhotos > 0}, true);
     card.appendChild(list);
 
-    var buildBtn = el("button", {class:"btn " + (r.ready ? "btn-primary" : "btn-locked"), "aria-label": r.ready ? null : "Build care guide — locked. Add " + missingLabelList(r.missing) + " first."}, [r.ready ? "✨ Build care guide" : "🔒 Build care guide"]);
-    var note = el("div", {class:"ready-note"}, [r.ready ? "Takes about half a minute." : "Add " + missingLabelList(r.missing) + " to unlock."]);
+    var buildBtn = el("button", {class:"btn " + (r.ready ? "btn-primary" : "btn-locked"), "aria-label": r.ready ? null : tr("Build care guide — locked. Add {missing} first.", {missing:missingLabelList(r.missing)})}, [r.ready ? tr("✨ Build care guide") : tr("🔒 Build care guide")]);
+    var note = el("div", {class:"ready-note"}, [r.ready ? tr("Takes about half a minute.") : tr("Add {missing} to unlock.", {missing:missingLabelList(r.missing)})]);
     buildBtn.addEventListener("click", async function(){
       if (!r.ready){
         // Locked: jump straight into filling what's missing.
         openQuickAnswer(p, r.missing[0].key, {chain:true, chainIndex:1, chainTotal:r.missing.length});
         return;
       }
-      buildBtn.disabled = true; buildBtn.textContent = "Building…";
-      note.textContent = "Writing a guide for " + p.name + "…";
+      buildBtn.disabled = true; buildBtn.textContent = tr("Building…");
+      note.textContent = tr("Writing a guide for {name}…", {name:p.name});
       var ok = await researchPlant(p.id);
       if (ok){
         await loadGardenData();
-        buzz(15); showToast("🌿 Care guide ready for " + p.name);
+        buzz(15); showToast(tr("🌿 Care guide ready for {name}", {name:p.name}));
         plantDetailTab = "care";
         openPlantDetail(p.id, {keepTab:true});
       } else {
-        buildBtn.disabled = false; buildBtn.textContent = "✨ Build care guide";
-        note.textContent = "Couldn't build it just now — try again in a moment.";
+        buildBtn.disabled = false; buildBtn.textContent = tr("✨ Build care guide");
+        note.textContent = tr("Couldn't build it just now — try again in a moment.");
       }
     });
     card.appendChild(el("div", {class:"ready-foot"}, [buildBtn, note]));
     if (r.missing.length > 1){
-      var fill = el("button", {class:"link-btn", style:"margin-top:8px;"}, ["Answer the " + r.missing.length + " missing questions →"]);
+      var fill = el("button", {class:"link-btn", style:"margin-top:8px;"}, [tr("Answer the {n} missing questions →", {n:r.missing.length})]);
       fill.addEventListener("click", function(){ openQuickAnswer(p, r.missing[0].key, {chain:true, chainIndex:1, chainTotal:r.missing.length}); });
       card.appendChild(fill);
     }
@@ -1150,6 +1207,31 @@
   // Calendar) is showing; renderShell() rebuilds the whole shell (topbar +
   // tab bar + the active section) every time it's called, same "full
   // re-render on any state change" approach the rest of the app already uses.
+  // tr() for a sentence with an element inside it ("needs <b>3 things</b>
+  // today"): returns its pieces, [text, node, text, ...], for el().
+  function trParts(s, vars){
+    return tr(s).split(/(\{\w+\})/).map(function(part){
+      var m = /^\{(\w+)\}$/.exec(part);
+      if (!m || !(m[1] in vars)) return part;
+      var v = vars[m[1]];
+      return (v && v.nodeType) ? v : String(v);
+    }).filter(function(x){ return x !== ""; });
+  }
+
+  // index.html's own text (the Ask panel, the page title).
+  function applyStaticText(){
+    document.title = tr("Garden Companion");
+    var boot = document.querySelector("#boot .onboard-card");
+    if (boot && !document.getElementById("boot").hidden && !boot.querySelector("h2")) boot.textContent = tr("Opening the garden…");
+    var fab = document.getElementById("askFab");
+    fab.setAttribute("aria-label", tr("Ask your gardener"));
+    fab.querySelector(".ask-fab-label").textContent = tr("Ask your gardener");
+    document.querySelector("#askPanel .ask-head strong").textContent = tr("Ask your gardener");
+    document.getElementById("askClose").setAttribute("aria-label", tr("Close"));
+    document.getElementById("askInput").placeholder = tr("How's my tomato looking this week?");
+    document.getElementById("askSend").textContent = tr("Send");
+  }
+
   function renderShell(){
     var app = document.getElementById("app");
     // Horizontal scrollers (garden row, tips, library shelves) keep their
@@ -1160,9 +1242,9 @@
     app.innerHTML = "";
     var shell = el("div", {class:"shell"});
 
-    var gearBtn = el("button", {class:"btn btn-ghost icon-btn gear-btn", title:"Settings", "aria-label":"Settings", onclick:openSettings}, [el("span", {html:icon("gear")})]);
+    var gearBtn = el("button", {class:"btn btn-ghost icon-btn gear-btn", title:tr("Settings"), "aria-label":tr("Settings"), onclick:openSettings}, [el("span", {html:icon("gear")})]);
     shell.appendChild(el("div", {class:"topbar"}, [
-      el("div", {class:"brand"}, [el("span", {class:"mark", html:icon("leaf")}), el("h1", {}, ["Garden Companion"])]),
+      el("div", {class:"brand"}, [el("span", {class:"mark", html:icon("leaf")}), el("h1", {}, [tr("Garden Companion")])]),
       gearBtn
     ]));
 
@@ -1193,8 +1275,8 @@
   function sectionTabBar(){
     // "tasks" is the Home dashboard (the key predates the separate Tasks
     // screen, which is "tasklist").
-    var tabs = [["tasks","Home","home"], ["tasklist","Tasks","tasks"], ["library","My garden","seedling"], ["calendar","Calendar","calendar"]];
-    var wrap = el("nav", {class:"tab-bar", "aria-label":"Sections"});
+    var tabs = [["tasks",tr("Home"),"home"], ["tasklist",tr("Tasks"),"tasks"], ["library",tr("My garden"),"seedling"], ["calendar",tr("Calendar"),"calendar"]];
+    var wrap = el("nav", {class:"tab-bar", "aria-label":tr("Sections")});
     // App-icon style counts: overdue tasks on Tasks, plants that need
     // something on My garden.
     var today = todayISO();
@@ -1222,6 +1304,8 @@
 
   function tasksHomeSection(){
     var wrap = el("div", {});
+    var translate = translateBanner();
+    if (translate) wrap.appendChild(translate);
     wrap.appendChild(heroCard());
     var garden = gardenRow();
     if (garden) wrap.appendChild(garden);
@@ -1247,25 +1331,33 @@
   }
   function progressRing(done, total){
     var r = 30, c = 2 * Math.PI * r, frac = total ? done / total : 0;
-    var ring = el("div", {class:"ring", title: done + " of " + total + " tasks done this week", role:"img", "aria-label": done + " of " + total + " tasks done this week"});
+    var ringLabel = tr("{done} of {total} tasks done this week", {done:done, total:total});
+    var ring = el("div", {class:"ring", title: ringLabel, role:"img", "aria-label": ringLabel});
     ring.innerHTML = '<svg viewBox="0 0 72 72"><circle class="ring-track" cx="36" cy="36" r="' + r + '" fill="none" stroke-width="7"/>' +
       '<circle class="ring-fill" cx="36" cy="36" r="' + r + '" fill="none" stroke-width="7" stroke-linecap="round" stroke-dasharray="' + c.toFixed(1) + '" stroke-dashoffset="' + (c * (1 - frac)).toFixed(1) + '"/></svg>';
-    ring.appendChild(el("div", {class:"ring-label"}, [el("b", {}, [done + "/" + total]), el("span", {}, ["done"])]));
+    ring.appendChild(el("div", {class:"ring-label"}, [el("b", {dir:"ltr"}, [done + "/" + total]), el("span", {}, [tr("done")])]));
     return ring;
   }
   function weatherAdvice(w){
     if (!w) return null;
     var hi = parseInt((String(w.tempLabel || "").match(/-?\d+/) || [])[0], 10);
     var rain = parseInt((String(w.forecast || "").match(/(\d+)% chance of rain/) || [])[1], 10);
-    if (rain >= 50) return ["🌧️", "Rain likely — you can probably skip watering today."];
-    if (hi >= 33) return ["🥵", "A hot one — water early morning or in the evening, not midday."];
-    if (hi <= 4) return ["🧣", "Chilly — keep an eye on tender plants tonight."];
-    if (/breezy/i.test(w.forecast || "")) return ["💨", "Breezy — worth checking stakes on tall plants."];
-    return ["🌿", "Good weather to get out in the garden."];
+    if (rain >= 50) return ["🌧️", tr("Rain likely — you can probably skip watering today.")];
+    if (hi >= 33) return ["🥵", tr("A hot one — water early morning or in the evening, not midday.")];
+    if (hi <= 4) return ["🧣", tr("Chilly — keep an eye on tender plants tonight.")];
+    if (/breezy/i.test(w.forecast || "")) return ["💨", tr("Breezy — worth checking stakes on tall plants.")];
+    return ["🌿", tr("Good weather to get out in the garden.")];
+  }
+  // The server's forecast line (lib/weather.js) is a fixed set of English
+  // phrases; shown translated.
+  var FORECAST_PHRASES = [N_("Breezy, light chance of rain"), N_("Breezy and dry"), N_("Mostly dry, light chance of rain"), N_("Clear and mild")];
+  function forecastLabel(f){
+    var m = /^(\d+)% chance of rain$/.exec(f || "");
+    return m ? tr("{n}% chance of rain", {n:m[1]}) : (f ? tr(f) : "");
   }
   function heroCard(){
     var now = new Date(), hour = now.getHours();
-    var greet = hour < 5 ? "Good night" : hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+    var greet = hour < 5 ? tr("Good night") : hour < 12 ? tr("Good morning") : hour < 17 ? tr("Good afternoon") : tr("Good evening");
     var w = state.weather;
     var sky = weatherIconFor(w && (w.summary || w.forecast));
     var night = hour >= 19 || hour < 6;
@@ -1279,17 +1371,18 @@
     var needNow = overdue + dueToday;
     var sub;
     if (needNow > 0){
-      sub = el("div", {class:"hero-sub"}, ["Your garden needs ", el("strong", {}, [needNow + (needNow === 1 ? " thing" : " things")]), " today" + (overdue ? " (" + overdue + " to catch up on)." : ".")]);
+      sub = el("div", {class:"hero-sub"}, trParts(overdue ? N_("Your garden needs {count} today ({overdue} to catch up on).") : N_("Your garden needs {count} today."),
+        {count: el("strong", {}, [trn(needNow, "1 thing", "{n} things")]), overdue: overdue}));
     } else if (laterThisWeek > 0){
-      sub = el("div", {class:"hero-sub"}, ["Nothing due today — " + laterThisWeek + " coming up later this week."]);
+      sub = el("div", {class:"hero-sub"}, [tr("Nothing due today — {n} coming up later this week.", {n:laterThisWeek})]);
     } else {
-      sub = el("div", {class:"hero-sub"}, ["Nothing due — go enjoy your garden 🌿"]);
+      sub = el("div", {class:"hero-sub"}, [tr("Nothing due — go enjoy your garden 🌿")]);
     }
 
     var prog = weekProgress();
     var top = el("div", {class:"hero-top"}, [
       el("div", {}, [
-        el("div", {class:"hero-date"}, [now.toLocaleDateString(undefined, {weekday:"long", month:"long", day:"numeric"})]),
+        el("div", {class:"hero-date"}, [now.toLocaleDateString(I18N.locale(), {weekday:"long", month:"long", day:"numeric"})]),
         el("h2", {}, [greet]),
         sub
       ]),
@@ -1297,7 +1390,7 @@
     ]);
     var hero = el("section", {class:"hero " + theme}, [top]);
 
-    var refreshBtn = el("button", {class:"btn btn-ghost btn-sm icon-btn", title:"Check weather now", "aria-label":"Refresh weather", style:"flex:none;"}, [el("span", {html:icon("refresh")})]);
+    var refreshBtn = el("button", {class:"btn btn-ghost btn-sm icon-btn", title:tr("Check weather now"), "aria-label":tr("Refresh weather"), style:"flex:none;"}, [el("span", {html:icon("refresh")})]);
     refreshBtn.addEventListener("click", async function(){
       refreshBtn.disabled = true; refreshBtn.classList.add("spinning");
       try { await refreshWeatherNow(); }
@@ -1306,12 +1399,12 @@
     var wxIcon = (night && sky === "sun") ? "moon" : sky;
     var wxText = w
       ? el("div", {class:"wx-text"}, [
-          el("div", {}, [el("span", {class:"temp"}, [w.tempLabel || w.summary || "—"]), " ", el("span", {class:"desc"}, [w.forecast || ""])]),
-          el("div", {class:"loc"}, [(w.locationLabel || "") + (w.fetchedAt ? " · updated " + fmtDate(w.fetchedAt) : "")])
+          el("div", {}, [el("span", {class:"temp", dir:"ltr"}, [w.tempLabel || w.summary || "—"]), " ", el("span", {class:"desc"}, [forecastLabel(w.forecast)])]),
+          el("div", {class:"loc"}, [placeLabel(w.locationLabel) + (w.fetchedAt ? " · " + tr("updated {date}", {date:fmtDate(w.fetchedAt)}) : "")])
         ])
       : el("div", {class:"wx-text"}, [
-          el("div", {class:"desc"}, ["Weather check-in hasn't run yet"]),
-          el("div", {class:"loc"}, ["Conditions for " + ((state.settings.location||{}).label || "your garden") + " will show here."])
+          el("div", {class:"desc"}, [tr("Weather check-in hasn't run yet")]),
+          el("div", {class:"loc"}, [tr("Conditions for {place} will show here.", {place: placeLabel((state.settings.location||{}).label) || tr("your garden")})])
         ]);
     hero.appendChild(el("div", {class:"hero-weather"}, [el("span", {class:"icon-lg", html:icon(wxIcon)}), wxText, refreshBtn]));
     if (w && w.alert) hero.appendChild(el("div", {class:"hero-alert chip chip-crit"}, ["⚠︎ " + w.alert]));
@@ -1329,7 +1422,7 @@
     var av = el("span", {class:"avatar" + (attn ? " attn" : ""), style:"--av-bg:color-mix(in srgb, " + color + " 28%, var(--surface));"},
       [lastPhoto ? el("img", {src:lastPhoto.dataUrl, alt:""}) : typeEmoji(p.type)]);
     var n = plantAlerts(p).count;
-    var btn = el("button", {class:"avatar-btn", "aria-label": p.name + (n ? " — " + n + " need" + (n === 1 ? "s" : "") + " attention" : "")}, [
+    var btn = el("button", {class:"avatar-btn", "aria-label": p.name + (n ? " — " + trn(n, "1 needs attention", "{n} need attention") : "")}, [
       el("span", {class:"avatar-wrap"}, [av, countBadge(n, "av-badge")]),
       el("span", {class:"avatar-name"}, [p.name])
     ]);
@@ -1340,9 +1433,9 @@
     if (state.plants.length === 0){
       var cta = el("div", {class:"card empty-fun", style:"margin-bottom:18px;"}, [
         el("span", {class:"big"}, ["🌱"]),
-        el("div", {style:"margin-bottom:12px;"}, ["Your garden is empty — add your first plant and I'll build its care guide and schedule."])
+        el("div", {style:"margin-bottom:12px;"}, [tr("Your garden is empty — add your first plant and I'll build its care guide and schedule.")])
       ]);
-      var b = el("button", {class:"btn btn-primary"}, ["+ Add your first plant"]);
+      var b = el("button", {class:"btn btn-primary"}, [tr("+ Add your first plant")]);
       b.addEventListener("click", openPlantWizard);
       cta.appendChild(b);
       return cta;
@@ -1350,16 +1443,16 @@
     var plants = state.plants.slice().sort(function(a,b){
       return (b.healthStatus === "needs_attention" ? 1 : 0) - (a.healthStatus === "needs_attention" ? 1 : 0);
     });
-    var seeAll = el("button", {class:"link-btn"}, ["See all →"]);
+    var seeAll = el("button", {class:"link-btn"}, [tr("See all →")]);
     seeAll.addEventListener("click", function(){ state.section = "library"; renderShell(); window.scrollTo(0, 0); });
     var row = el("div", {class:"hscroll", "data-keep-scroll":"garden-row"});
     plants.forEach(function(p){ row.appendChild(plantAvatar(p)); });
-    var add = el("button", {class:"avatar-btn", "aria-label":"Add a plant"}, [el("span", {class:"avatar add"}, ["+"]), el("span", {class:"avatar-name"}, ["Add"])]);
+    var add = el("button", {class:"avatar-btn", "aria-label":tr("Add a plant")}, [el("span", {class:"avatar add"}, ["+"]), el("span", {class:"avatar-name"}, [tr("Add")])]);
     add.addEventListener("click", openPlantWizard);
     row.appendChild(add);
     return el("section", {}, [
       el("div", {class:"section-title"}, [
-        el("h2", {}, ["Your plants"]),
+        el("h2", {}, [tr("Your plants")]),
         el("span", {class:"hint"}, [seeAll])
       ]),
       row
@@ -1413,21 +1506,21 @@
     if (!all.length){
       if (status === "loading"){
         return el("section", {}, [
-          el("div", {class:"section-title"}, [el("h2", {}, ["Garden tips"]), el("span", {class:"hint"}, [MONTH_NAMES[m0]])]),
-          el("div", {class:"about-locked tips-loading"}, [el("span", {}, ["🌱"]), el("span", {}, ["Picking this month's tips for your garden…"])])
+          el("div", {class:"section-title"}, [el("h2", {}, [tr("Garden tips")]), el("span", {class:"hint"}, [monthName(m0)])]),
+          el("div", {class:"about-locked tips-loading"}, [el("span", {}, ["🌱"]), el("span", {}, [tr("Picking this month's tips for your garden…")])])
         ]);
       }
       return null;
     }
     var visible = all.filter(function(tip){ return !isTipHidden(tip); }).slice(0, 6);
-    var seeAll = el("button", {class:"link-btn"}, ["All tips (" + all.length + ") →"]);
+    var seeAll = el("button", {class:"link-btn"}, [tr("All tips ({n}) →", {n:all.length})]);
     seeAll.addEventListener("click", function(){ openAllTips(); });
-    var head = el("div", {class:"section-title"}, [el("h2", {}, ["Garden tips"]), el("span", {class:"hint"}, [MONTH_NAMES[new Date().getMonth()] + " · ", seeAll])]);
+    var head = el("div", {class:"section-title"}, [el("h2", {}, [tr("Garden tips")]), el("span", {class:"hint"}, [monthName(new Date().getMonth()) + " · ", seeAll])]);
     if (!visible.length){
       // Everything hidden: keep a slim way back to them.
-      var again = el("button", {class:"link-btn"}, ["See them all →"]);
+      var again = el("button", {class:"link-btn"}, [tr("See them all →")]);
       again.addEventListener("click", function(){ openAllTips(); });
-      return el("section", {}, [head, el("div", {class:"about-locked"}, [el("span", {}, ["💡"]), el("span", {}, ["You've hidden this month's tips. "]), again])]);
+      return el("section", {}, [head, el("div", {class:"about-locked"}, [el("span", {}, ["💡"]), el("span", {}, [tr("You've hidden this month's tips.") + " "]), again])]);
     }
     var row = el("div", {class:"hscroll", "data-keep-scroll":"tips"});
     visible.forEach(function(tip){ row.appendChild(tipCard(tip)); });
@@ -1445,7 +1538,7 @@
     card.appendChild(el("div", {class:"tip-head"}, [
       el("span", {class:"tip-emoji", "aria-hidden":"true"}, [tip.emoji]),
       el("div", {}, [
-        el("div", {class:"tip-kicker"}, [tip.weather ? "Weather tip" : (tip.plants && tip.plants.length ? "For your " + tip.plants.join(", ") : "Seasonal tip"), hidden ? el("span", {class:"chip chip-neutral", style:"margin-left:6px;letter-spacing:0;text-transform:none;"}, ["Hidden"]) : null]),
+        el("div", {class:"tip-kicker"}, [tip.weather ? tr("Weather tip") : (tip.plants && tip.plants.length ? tr("For your {plants}", {plants:tip.plants.join(", ")}) : tr("Seasonal tip")), hidden ? el("span", {class:"chip chip-neutral", style:"margin-inline-start:6px;letter-spacing:0;text-transform:none;"}, [tr("Hidden")]) : null]),
         el("div", {class:"tip-title"}, [tip.title])
       ])
     ]));
@@ -1453,22 +1546,22 @@
     var actions = el("div", {class:"tip-actions"});
     var added = tipAddedTask(tip);
     if (added){
-      actions.appendChild(el("div", {class:"tip-added"}, [el("span", {html:icon("check")}), "In your tasks · " + relativeDay(added.dueDate)]));
+      actions.appendChild(el("div", {class:"tip-added"}, [el("span", {html:icon("check")}), tr("In your tasks · {when}", {when:relativeDay(added.dueDate)})]));
     } else {
-      var addBtn = el("button", {class:"btn btn-primary btn-sm"}, ["+ Add as task"]);
+      var addBtn = el("button", {class:"btn btn-primary btn-sm"}, [tr("+ Add as task")]);
       addBtn.addEventListener("click", function(){ addTipAsTask(tip, addBtn, {month:opts.month, onChange:refresh}); });
       actions.appendChild(addBtn);
     }
     if (hidden){
-      var show = el("button", {class:"btn btn-ghost btn-sm"}, ["Show on Home"]);
-      show.addEventListener("click", function(){ setTipHidden(tip, false); refresh(); showToast("Tip is back on Home"); });
+      var show = el("button", {class:"btn btn-ghost btn-sm"}, [tr("Show on Home")]);
+      show.addEventListener("click", function(){ setTipHidden(tip, false); refresh(); showToast(tr("Tip is back on Home")); });
       actions.appendChild(show);
     } else if (!added && opts.month === undefined){
-      var notNow = el("button", {class:"btn btn-ghost btn-sm"}, ["Not now"]);
+      var notNow = el("button", {class:"btn btn-ghost btn-sm"}, [tr("Not now")]);
       notNow.addEventListener("click", function(){
         setTipHidden(tip, true);
         refresh();
-        showToast("Tip hidden — find it under All tips", {label:"Undo", fn:function(){ setTipHidden(tip, false); refresh(); }});
+        showToast(tr("Tip hidden — find it under All tips"), {label:tr("Undo"), fn:function(){ setTipHidden(tip, false); refresh(); }});
       });
       actions.appendChild(notNow);
     }
@@ -1488,7 +1581,7 @@
   }
   async function addTipAsTask(tip, btn, opts){
     opts = opts || {};
-    btn.disabled = true; btn.textContent = "Adding…";
+    btn.disabled = true; btn.textContent = tr("Adding…");
     var due = tipDueDate(tip, opts.month);
     try {
       var created = await api("/tasks", {method:"POST", body:{
@@ -1497,11 +1590,11 @@
       }});
       if (created) state.tasks.push(created);
     } catch(e){
-      btn.disabled = false; btn.textContent = "Couldn't add — try again";
+      btn.disabled = false; btn.textContent = tr("Couldn't add — try again");
       return;
     }
     buzz(); leafBurst(btn);
-    showToast("Added to your tasks — due " + relativeDay(due));
+    showToast(tr("Added to your tasks — due {when}", {when:relativeDay(due)}));
     (opts.onChange || renderShell)();
   }
 
@@ -1512,13 +1605,13 @@
     if (month === undefined) month = now.getMonth();
     showModal(function(container){
       container.appendChild(el("div", {class:"modal-head"}, [
-        el("h3", {style:"font-size:17px;"}, ["Garden tips"]),
-        el("button", {class:"modal-close", "aria-label":"Close", onclick:closeModal}, ["×"])
+        el("h3", {style:"font-size:17px;"}, [tr("Garden tips")]),
+        el("button", {class:"modal-close", "aria-label":tr("Close"), onclick:closeModal}, ["×"])
       ]));
-      var months = el("div", {class:"filter-chips month-chips", role:"toolbar", "aria-label":"Month"});
+      var months = el("div", {class:"filter-chips month-chips", role:"toolbar", "aria-label":tr("Month")});
       for (var i=0;i<12;i++){
         var m = (now.getMonth() + i) % 12; // start from this month
-        var chip = el("button", {class:"fchip" + (m === month ? " active" : ""), "aria-pressed": m === month ? "true" : "false"}, [i === 0 ? "This month" : MONTH_NAMES[m].slice(0,3)]);
+        var chip = el("button", {class:"fchip" + (m === month ? " active" : ""), "aria-pressed": m === month ? "true" : "false"}, [i === 0 ? tr("This month") : monthShort(m)]);
         chip.addEventListener("click", (function(mm){ return function(){ openAllTips(mm); }; })(m));
         months.appendChild(chip);
       }
@@ -1526,7 +1619,7 @@
       var isNow = month === now.getMonth();
       var entry = tipsByMonth[month];
       if (!entry || entry.status === "loading"){
-        container.appendChild(el("div", {class:"about-locked tips-loading", style:"margin-top:12px;"}, [el("span", {}, ["🌱"]), el("span", {}, ["Writing " + MONTH_NAMES[month] + "'s tips for your garden — this takes a few seconds the first time…"])]));
+        container.appendChild(el("div", {class:"about-locked tips-loading", style:"margin-top:12px;"}, [el("span", {}, ["🌱"]), el("span", {}, [tr("Writing {month}'s tips for your garden — this takes a few seconds the first time…", {month:monthName(month)})])]));
         // Re-open once loaded, unless the sheet was closed or moved on.
         loadTips(month, function(){
           var sheet = document.getElementById("modalContent");
@@ -1538,12 +1631,13 @@
       container.setAttribute("data-tips-month", String(month));
       var tips = (isNow && window.GardenTips ? window.GardenTips.weatherTips(state.weather) : []).concat(entry.status === "ready" ? entry.tips : []);
       container.appendChild(el("p", {class:"lead", style:"font-size:13px;color:var(--ink-soft);margin:10px 0 12px;"}, [
-        tips.length + (tips.length === 1 ? " tip" : " tips") + " for " + (isNow ? "this month" : MONTH_NAMES[month]) + ", written for your garden's location, climate and plants." + (isNow ? "" : " Adding one sets it for early " + MONTH_NAMES[month] + ".")
+        isNow ? trn(tips.length, "1 tip for this month, written for your garden's location, climate and plants.", "{n} tips for this month, written for your garden's location, climate and plants.")
+              : trn(tips.length, "1 tip for {month}, written for your garden's location, climate and plants. Adding it sets it for early {month}.", "{n} tips for {month}, written for your garden's location, climate and plants. Adding one sets it for early {month}.", {month:monthName(month)})
       ]));
       if (!tips.length){
-        var retry = el("button", {class:"link-btn"}, ["Try again"]);
+        var retry = el("button", {class:"link-btn"}, [tr("Try again")]);
         retry.addEventListener("click", function(){ delete tipsByMonth[month]; openAllTips(month); });
-        container.appendChild(el("div", {class:"empty"}, ["Couldn't load tips for this month right now. ", retry]));
+        container.appendChild(el("div", {class:"empty"}, [tr("Couldn't load tips for this month right now.") + " ", retry]));
       }
       var list = el("div", {class:"tips-list"});
       tips.forEach(function(tip){
@@ -1553,10 +1647,17 @@
     }, {keepScroll:true});
   }
 
+  // Why a task exists (tasks.reason) — saved as these English keys by the
+  // server and the app, shown translated.
+  var TASK_REASONS = [N_("care guide"), N_("photo diagnosis"), N_("reported issue"), N_("health tracking"), N_("weekly checkin"), N_("weather alert"), N_("Garden tip"), N_("Added by you"), N_("new plant photo")];
+  // Comments the server used to write in English (it now writes them in
+  // the saved language); shown translated on older tasks.
+  var SERVER_COMMENTS = [N_("Superseded by a newer check-in."), N_("Resolved — latest photo looks healthy.")];
+
   function severityChip(sev){
-    var map = {critical:["chip-crit","Urgent"], warning:["chip-warn","Soon"], info:["chip-neutral","Note"]};
+    var map = {critical:["chip-crit",N_("Urgent")], warning:["chip-warn",N_("Soon")], info:["chip-neutral",N_("Note")]};
     var m = map[sev] || map.info;
-    return el("span", {class:"chip " + m[0]}, [m[1]]);
+    return el("span", {class:"chip " + m[0]}, [tr(m[1])]);
   }
 
   // "This week" = anything overdue (still pending, due before today) plus
@@ -1577,29 +1678,29 @@
   // chips sprinkled through it.
   function tasksSection(tasks){
     var sec = el("div", {class:"card", style:"margin:22px 0 18px;"});
-    var allLink = el("button", {class:"link-btn"}, ["All tasks →"]);
+    var allLink = el("button", {class:"link-btn"}, [tr("All tasks →")]);
     allLink.addEventListener("click", function(){ state.section = "tasklist"; renderShell(); window.scrollTo(0, 0); });
     sec.appendChild(el("div", {class:"section-head"}, [
-      el("h2", {}, ["This week"]),
-      el("span", {class:"hint"}, [tasks.length ? tasks.length + " open" + (isTouch() ? " · swipe → when done · " : " · ") : "", allLink])
+      el("h2", {}, [tr("This week")]),
+      el("span", {class:"hint"}, [tasks.length ? tr("{n} open", {n:tasks.length}) + (isTouch() ? " · " + tr("swipe → when done") + " · " : " · ") : "", allLink])
     ]));
     if (tasks.length === 0){
-      sec.appendChild(el("div", {class:"empty-fun"}, [el("span", {class:"big"}, ["🌻"]), "All clear this week! I'll add tasks here each morning when something needs attention."]));
+      sec.appendChild(el("div", {class:"empty-fun"}, [el("span", {class:"big"}, ["🌻"]), tr("All clear this week! I'll add tasks here each morning when something needs attention.")]));
       return sec;
     }
     var today = todayISO();
     var groups = [
-      {label:"Catch up", cls:"catchup", test:function(t){ return t.dueDate && t.dueDate < today; }},
-      {label:"Today", test:function(t){ return t.dueDate === today; }},
-      {label:"Tomorrow", test:function(t){ return t.dueDate && daysFromToday(t.dueDate) === 1; }},
-      {label:"Later this week", test:function(t){ return t.dueDate && daysFromToday(t.dueDate) > 1; }},
-      {label:"Anytime", test:function(t){ return !t.dueDate; }}
+      {key:"catchup", label:tr("Catch up"), cls:"catchup", test:function(t){ return t.dueDate && t.dueDate < today; }},
+      {key:"today", label:tr("Today"), test:function(t){ return t.dueDate === today; }},
+      {key:"tomorrow", label:tr("Tomorrow"), test:function(t){ return t.dueDate && daysFromToday(t.dueDate) === 1; }},
+      {key:"later", label:tr("Later this week"), test:function(t){ return t.dueDate && daysFromToday(t.dueDate) > 1; }},
+      {key:"anytime", label:tr("Anytime"), test:function(t){ return !t.dueDate; }}
     ];
     groups.forEach(function(g){
       var items = tasks.filter(g.test);
       if (!items.length) return;
       sec.appendChild(el("div", {class:"task-group-label" + (g.cls ? " " + g.cls : "")}, [g.label, el("span", {class:"count"}, ["· " + items.length])]));
-      items.forEach(function(t){ sec.appendChild(taskListRow(t, {swipe:true, hideDate: g.label === "Today" || g.label === "Tomorrow"})); });
+      items.forEach(function(t){ sec.appendChild(taskListRow(t, {swipe:true, hideDate: g.key === "today" || g.key === "tomorrow"})); });
     });
     return sec;
   }
@@ -1623,11 +1724,11 @@
   function upcomingSection(tasks){
     var sec = el("div", {class:"card", style:"margin-bottom:18px;"});
     sec.appendChild(el("div", {class:"section-head"}, [
-      el("h2", {}, ["Upcoming"]),
-      el("span", {class:"hint"}, ["next 2 weeks"])
+      el("h2", {}, [tr("Upcoming")]),
+      el("span", {class:"hint"}, [tr("next 2 weeks")])
     ]));
     if (tasks.length === 0){
-      sec.appendChild(el("div", {class:"empty"}, ["Nothing scheduled for the two weeks after this one yet — a good moment to browse the garden tips above."]));
+      sec.appendChild(el("div", {class:"empty"}, [tr("Nothing scheduled for the two weeks after this one yet — a good moment to browse the garden tips above.")]));
     } else {
       tasks.forEach(function(t){ sec.appendChild(taskListRow(t, {swipe:true})); });
     }
@@ -1664,16 +1765,16 @@
       if (!counts[c.key]){ counts[c.key] = {cat:c, n:0}; order.push(c.key); }
       counts[c.key].n++;
     });
-    var parts = order.map(function(k){ var c = counts[k]; return c.cat.emoji + " " + c.cat.verb + (c.n > 1 ? " ×" + c.n : ""); });
+    var parts = order.map(function(k){ var c = counts[k]; return c.cat.emoji + " " + tr(c.cat.verb) + (c.n > 1 ? " ×" + c.n : ""); });
     var streak = weekStreak();
     var text = doneThisWeek.length
-      ? [el("div", {class:"celebrate-title"}, ["Nice work — " + doneThisWeek.length + (doneThisWeek.length === 1 ? " job" : " jobs") + " done this week!"]),
+      ? [el("div", {class:"celebrate-title"}, [trn(doneThisWeek.length, "Nice work — 1 job done this week!", "Nice work — {n} jobs done this week!")]),
          el("div", {class:"celebrate-sub"}, [parts.join(" · ")])]
-      : [el("div", {class:"celebrate-title"}, ["Recently done"]),
-         el("div", {class:"celebrate-sub"}, ["Nothing ticked off in the last 7 days yet."])];
-    if (streak >= 2) text.push(el("span", {class:"chip chip-amber streak"}, ["🔥 " + streak + "-week streak — every task done"]));
+      : [el("div", {class:"celebrate-title"}, [tr("Recently done")]),
+         el("div", {class:"celebrate-sub"}, [tr("Nothing ticked off in the last 7 days yet.")])];
+    if (streak >= 2) text.push(el("span", {class:"chip chip-amber streak"}, [tr("🔥 {n}-week streak — every task done", {n:streak})]));
     sec.appendChild(el("div", {class:"celebrate"}, [el("span", {class:"celebrate-emoji", "aria-hidden":"true"}, [doneThisWeek.length ? "🎉" : "🌾"]), el("div", {}, text)]));
-    var details = el("details", {class:"done-list"}, [el("summary", {}, ["Show recently done (" + tasks.length + ")"])]);
+    var details = el("details", {class:"done-list"}, [el("summary", {}, [tr("Show recently done ({n})", {n:tasks.length})])]);
     tasks.forEach(function(t){ details.appendChild(taskListRow(t)); });
     sec.appendChild(details);
     return sec;
@@ -1690,10 +1791,10 @@
     var color = t.plantId ? plantColorFor(t.plantId) : "var(--moss)";
     var meta = el("span", {class:"task-mini-meta"}, [
       t.plantName ? el("span", {class:"chip chip-moss"}, [t.plantName]) : null,
-      t.kind === "tip" ? el("span", {class:"chip chip-amber"}, ["Tip"]) : null,
+      t.kind === "tip" ? el("span", {class:"chip chip-amber"}, [tr("Tip")]) : null,
       overdue ? el("span", {class:"chip chip-warn"}, [relativeDay(t.dueDate)]) : null,
-      t.requestsPhoto ? el("span", {class:"chip chip-neutral"}, ["📷 photo"]) : null,
-      (!overdue && !opts.hideDate && t.dueDate) ? el("span", {}, [t.status === "done" && t.completedAt ? "done " + fmtDate(t.completedAt) : fmtDate(t.dueDate)]) : null
+      t.requestsPhoto ? el("span", {class:"chip chip-neutral"}, [tr("📷 photo")]) : null,
+      (!overdue && !opts.hideDate && t.dueDate) ? el("span", {}, [t.status === "done" && t.completedAt ? tr("done {date}", {date:fmtDate(t.completedAt)}) : fmtDate(t.dueDate)]) : null
     ]);
     var row = el("button", {class:"task-mini" + (t.status==="done" ? " done" : ""), style:"--task-color:" + color + ";"}, [
       el("span", {class:"task-mini-icon", html:icon(cat.icon)}),
@@ -1705,17 +1806,19 @@
     });
     if (!opts.swipe || t.status === "done") return row;
     var wrap = el("div", {class:"swipe-wrap"}, [
-      el("div", {class:"swipe-bg", "aria-hidden":"true"}, [el("span", {html:icon("check")}), "Done"]),
+      el("div", {class:"swipe-bg", "aria-hidden":"true"}, [el("span", {html:icon("check")}), tr("Done")]),
       row
     ]);
     makeSwipeable(wrap, row, function(){ completeTaskFromList(t, wrap, row); });
     return wrap;
   }
 
-  // Swipe right past ~35% of the row to complete. Vertical scrolling keeps
-  // working (touch-action: pan-y); a swipe never also counts as a tap.
+  // Swipe right past ~35% of the row to complete (left in a right-to-left
+  // language). Vertical scrolling keeps working (touch-action: pan-y); a
+  // swipe never also counts as a tap.
   function makeSwipeable(wrap, row, onComplete){
     var startX = 0, startY = 0, tracking = false, dragging = false, armed = false, pid = null;
+    var dir = I18N.isRTL() ? -1 : 1;
     row.addEventListener("pointerdown", function(e){
       if (e.button !== undefined && e.button !== 0) return;
       tracking = true; dragging = false; armed = false; pid = e.pointerId;
@@ -1723,7 +1826,7 @@
     });
     row.addEventListener("pointermove", function(e){
       if (!tracking || e.pointerId !== pid) return;
-      var dx = e.clientX - startX, dy = e.clientY - startY;
+      var dx = (e.clientX - startX) * dir, dy = e.clientY - startY;
       if (!dragging){
         if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) { tracking = false; return; }
         if (dx > 10 && dx > Math.abs(dy) * 1.5){
@@ -1733,7 +1836,7 @@
         } else return;
       }
       var tx = Math.max(0, dx);
-      row.style.transform = "translateX(" + tx + "px)";
+      row.style.transform = "translateX(" + (tx * dir) + "px)";
       var nowArmed = tx > Math.min(130, wrap.offsetWidth * 0.35);
       if (nowArmed !== armed){ armed = nowArmed; wrap.classList.toggle("armed", armed); if (armed) buzz(8); }
     });
@@ -1746,7 +1849,7 @@
       setTimeout(function(){ row.__swiped = false; }, 400);
       row.classList.add("animating");
       if (armed){
-        row.style.transform = "translateX(" + wrap.offsetWidth + "px)";
+        row.style.transform = "translateX(" + (wrap.offsetWidth * dir) + "px)";
         onComplete();
       } else {
         row.style.transform = "translateX(0)";
@@ -1771,15 +1874,15 @@
       await setTaskStatus(t, "done");
     } catch(e){
       swipeActive = false;
-      showToast("Couldn't save — try again");
+      showToast(tr("Couldn't save — try again"));
       renderShell();
       return;
     }
     setTimeout(function(){
       swipeActive = false;
       renderShell();
-      showToast("Nice! “" + t.title + "” done", {label:"Undo", fn: async function(){
-        try { await setTaskStatus(t, "pending"); } catch(e){ showToast("Couldn't undo — try again"); }
+      showToast(tr("Nice! “{title}” done", {title:t.title}), {label:tr("Undo"), fn: async function(){
+        try { await setTaskStatus(t, "pending"); } catch(e){ showToast(tr("Couldn't undo — try again")); }
         renderShell();
       }});
       // Pick up anything the server did on completion (e.g. schedule stamps).
@@ -1788,9 +1891,9 @@
   }
 
   function statusChip(t){
-    if (t.status === "done") return el("span", {class:"chip chip-moss"}, ["Done" + (t.completedAt ? " · " + fmtDate(t.completedAt) : "")]);
-    if (t.dueDate && t.dueDate < todayISO()) return el("span", {class:"chip chip-warn"}, ["Overdue"]);
-    return el("span", {class:"chip chip-neutral"}, ["Pending"]);
+    if (t.status === "done") return el("span", {class:"chip chip-moss"}, [tr("Done") + (t.completedAt ? " · " + fmtDate(t.completedAt) : "")]);
+    if (t.dueDate && t.dueDate < todayISO()) return el("span", {class:"chip chip-warn"}, [tr("Overdue")]);
+    return el("span", {class:"chip chip-neutral"}, [tr("Pending")]);
   }
 
   // opts.allowComplete (default true): show a Mark done/not done button. The
@@ -1807,16 +1910,16 @@
     showModal(function(container){
       var t = state.tasks.find(function(x){ return x.id === taskId; });
       container.appendChild(el("div", {class:"modal-head"}, [
-        el("h3", {style:"font-size:17px;"}, ["Task"]),
-        el("button", {class:"modal-close", onclick:closeModal}, ["×"])
+        el("h3", {style:"font-size:17px;"}, [tr("Task")]),
+        el("button", {class:"modal-close", "aria-label":tr("Close"), onclick:closeModal}, ["×"])
       ]));
       if (opts.onBack){
-        var backBtn = el("button", {class:"btn btn-ghost btn-sm", style:"margin-bottom:14px;"}, [opts.backLabel || "← Back to calendar"]);
+        var backBtn = el("button", {class:"btn btn-ghost btn-sm", style:"margin-bottom:14px;"}, [opts.backLabel || tr("← Back to calendar")]);
         backBtn.addEventListener("click", opts.onBack);
         container.appendChild(backBtn);
       }
       if (!t){
-        container.appendChild(el("div", {class:"empty"}, ["This task couldn't be found — it may have been removed."]));
+        container.appendChild(el("div", {class:"empty"}, [tr("This task couldn't be found — it may have been removed.")]));
         return;
       }
       container.appendChild(taskDetailBody(t, opts));
@@ -1831,7 +1934,7 @@
     var wrap = el("div", {});
     var statusRow = el("div", {style:"display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;"});
     if (allowComplete){
-      var doneBtn = el("button", {class:"btn btn-sm" + (t.status==="done" ? " btn-ghost" : " btn-primary")}, [t.status==="done" ? "Mark not done" : "Mark done"]);
+      var doneBtn = el("button", {class:"btn btn-sm" + (t.status==="done" ? " btn-ghost" : " btn-primary")}, [t.status==="done" ? tr("Mark not done") : tr("Mark done")]);
       doneBtn.addEventListener("click", async function(){
         doneBtn.disabled = true;
         var newStatus = t.status === "done" ? "pending" : "done";
@@ -1841,7 +1944,7 @@
           await api("/tasks/" + t.id, {method:"PATCH", body:{status:newStatus}});
         } catch(e){
           doneBtn.disabled = false;
-          doneBtn.textContent = "Couldn't save — try again";
+          doneBtn.textContent = tr("Couldn't save — try again");
           return;
         }
         if (newStatus === "done"){ buzz(15); leafBurst(doneBtn); }
@@ -1853,33 +1956,33 @@
     }
     if (t.severity) statusRow.appendChild(severityChip(t.severity));
     if (t.plantName) statusRow.appendChild(el("span", {class:"chip chip-moss"}, [t.plantName]));
-    if (t.requestsPhoto) statusRow.appendChild(el("span", {class:"chip chip-neutral"}, ["📷 photo requested"]));
+    if (t.requestsPhoto) statusRow.appendChild(el("span", {class:"chip chip-neutral"}, [tr("📷 photo requested")]));
     wrap.appendChild(statusRow);
 
     wrap.appendChild(el("div", {style:"font-weight:600;font-size:15.5px;margin-bottom:4px;"}, [t.title]));
     if (t.description) wrap.appendChild(el("div", {class:"task-desc"}, [t.description]));
-    wrap.appendChild(el("div", {class:"task-meta", style:"margin-bottom:14px;"}, [fmtDate(t.dueDate) + (t.reason ? " · " + t.reason : "")]));
+    wrap.appendChild(el("div", {class:"task-meta", style:"margin-bottom:14px;"}, [fmtDate(t.dueDate) + (t.reason ? " · " + tr(t.reason) : "")]));
 
     (t.comments||[]).forEach(function(c){
-      wrap.appendChild(el("div", {class:"comment-item"}, [c.text + "  ·  " + fmtDate(c.date)]));
+      wrap.appendChild(el("div", {class:"comment-item"}, [tr(c.text) + "  ·  " + fmtDate(c.date)]));
     });
     if (t.photo && t.photo.dataUrl){
       wrap.appendChild(el("img", {src:t.photo.dataUrl, class:"photo-preview", style:"max-width:260px;"}));
       if (t.photo.analysis) wrap.appendChild(el("div", {class:"agent-note"}, [t.photo.analysis]));
     }
-    var commentTa = el("textarea", {placeholder:"Add a note…", style:"margin-top:10px;"});
+    var commentTa = el("textarea", {placeholder:tr("Add a note…"), style:"margin-top:10px;"});
     var photoInput = el("input", {type:"file", accept:"image/*", class:"sr-only"});
-    var photoLabel = el("label", {class:"btn btn-ghost btn-sm"}, ["Attach photo", photoInput]);
-    var saveBtn = el("button", {class:"btn btn-sm btn-primary"}, ["Save"]);
+    var photoLabel = el("label", {class:"btn btn-ghost btn-sm"}, [tr("Attach photo"), photoInput]);
+    var saveBtn = el("button", {class:"btn btn-sm btn-primary"}, [tr("Save")]);
     var pendingPhoto = null;
     photoInput.addEventListener("change", async function(){
       var f = photoInput.files[0]; if (!f) return;
       pendingPhoto = await resizeImage(f);
-      photoLabel.textContent = "Photo attached";
+      photoLabel.textContent = tr("Photo attached");
       photoLabel.appendChild(photoInput);
     });
     saveBtn.addEventListener("click", async function(){
-      saveBtn.disabled = true; saveBtn.textContent = "Saving…";
+      saveBtn.disabled = true; saveBtn.textContent = tr("Saving…");
       var noteText = commentTa.value.trim();
       try {
         if (pendingPhoto){
@@ -1892,7 +1995,7 @@
           await api("/tasks/" + t.id, {method:"PATCH", body:{comments:newComments}});
         }
       } catch(e){
-        saveBtn.disabled = false; saveBtn.textContent = "Couldn't save — try again";
+        saveBtn.disabled = false; saveBtn.textContent = tr("Couldn't save — try again");
         return;
       }
       await refresh();
@@ -1900,7 +2003,7 @@
     wrap.appendChild(el("div", {class:"field", style:"margin-top:8px;"}, [commentTa]));
     wrap.appendChild(el("div", {class:"row"}, [photoLabel, saveBtn]));
 
-    var editBtn = el("button", {class:"btn btn-ghost btn-sm"}, [el("span", {html:icon("pencil")}), " Edit"]);
+    var editBtn = el("button", {class:"btn btn-ghost btn-sm"}, [el("span", {html:icon("pencil")}), " " + tr("Edit")]);
     editBtn.addEventListener("click", function(){ openTaskForm(t); });
     wrap.appendChild(el("div", {class:"row task-manage-row"}, [editBtn, deleteTaskButton(t)]));
 
@@ -1912,34 +2015,34 @@
   // delete from here. Search typing only repaints the list, so the field
   // keeps focus. ----
   var TASK_KINDS = [
-    ["all", "All"], ["manual", "✍️ Mine"], ["scheduled", "📅 Care guide"], ["issue", "🩺 Problems"], ["checkin", "📷 Check-ins"], ["tip", "💡 Tips"]
+    ["all", N_("All")], ["manual", N_("✍️ Mine")], ["scheduled", N_("📅 Care guide")], ["issue", N_("🩺 Problems")], ["checkin", N_("📷 Check-ins")], ["tip", N_("💡 Tips")]
   ];
   var taskFilter = {status:"open", kind:"all", plant:"all", q:""};
 
   function taskListScreen(){
     var wrap = el("div", {});
     var openCount = state.tasks.filter(function(t){ return t.status !== "done"; }).length;
-    var addBtn = el("button", {class:"btn btn-sm btn-primary"}, ["+ New task"]);
+    var addBtn = el("button", {class:"btn btn-sm btn-primary"}, [tr("+ New task")]);
     addBtn.addEventListener("click", function(){ openTaskForm(null); });
     wrap.appendChild(el("div", {class:"section-title", style:"margin-top:4px;align-items:center;"}, [
-      el("div", {}, [el("h2", {}, ["Tasks"]), el("div", {class:"hint"}, [openCount + " open · " + (state.tasks.length - openCount) + " done"])]),
+      el("div", {}, [el("h2", {}, [tr("Tasks")]), el("div", {class:"hint"}, [tr("{open} open · {done} done", {open:openCount, done:state.tasks.length - openCount})])]),
       addBtn
     ]));
 
     var toolbar = el("div", {class:"lib-toolbar"});
     var results = el("div", {});
-    var search = el("input", {type:"search", placeholder:"Search tasks", value:taskFilter.q, "aria-label":"Search tasks", autocomplete:"off"});
+    var search = el("input", {type:"search", placeholder:tr("Search tasks"), value:taskFilter.q, "aria-label":tr("Search tasks"), autocomplete:"off"});
     search.addEventListener("input", function(){ taskFilter.q = search.value; renderTaskResults(results); });
     toolbar.appendChild(el("div", {class:"search-wrap"}, [el("span", {html:icon("search")}), search]));
 
-    var seg = el("div", {class:"seg", role:"group", "aria-label":"Status"});
-    [["open","Open"],["done","Done"],["all","All"]].forEach(function(v){
+    var seg = el("div", {class:"seg", role:"group", "aria-label":tr("Status")});
+    [["open",tr("Open")],["done",tr("Done")],["all",tr("All")]].forEach(function(v){
       var b = el("button", {class: taskFilter.status === v[0] ? "active" : "", "aria-pressed": taskFilter.status === v[0] ? "true" : "false"}, [v[1]]);
       b.addEventListener("click", function(){ taskFilter.status = v[0]; renderShell(); });
       seg.appendChild(b);
     });
-    var plantSel = el("select", {class:"sort-select", "aria-label":"Filter by plant"},
-      [["all","All plants"]].concat(state.plants.map(function(p){ return [p.id, p.name]; }), [["none","Not about a plant"]]).map(function(o){
+    var plantSel = el("select", {class:"sort-select", "aria-label":tr("Filter by plant")},
+      [["all",tr("All plants")]].concat(state.plants.map(function(p){ return [p.id, p.name]; }), [["none",tr("Not about a plant")]]).map(function(o){
         var opt = el("option", {value:o[0]}, [o[1]]);
         if (taskFilter.plant === o[0]) opt.setAttribute("selected","selected");
         return opt;
@@ -1950,10 +2053,10 @@
     // Kind chips — only kinds that actually exist, plus All.
     var kindsPresent = {};
     state.tasks.forEach(function(t){ kindsPresent[t.kind || "manual"] = true; });
-    var chips = el("div", {class:"filter-chips", role:"toolbar", "aria-label":"Filter by type"});
+    var chips = el("div", {class:"filter-chips", role:"toolbar", "aria-label":tr("Filter by type")});
     TASK_KINDS.forEach(function(k){
       if (k[0] !== "all" && !kindsPresent[k[0]]) return;
-      var chip = el("button", {class:"fchip" + (taskFilter.kind === k[0] ? " active" : ""), "aria-pressed": taskFilter.kind === k[0] ? "true" : "false"}, [k[1]]);
+      var chip = el("button", {class:"fchip" + (taskFilter.kind === k[0] ? " active" : ""), "aria-pressed": taskFilter.kind === k[0] ? "true" : "false"}, [tr(k[1])]);
       chip.addEventListener("click", function(){ taskFilter.kind = k[0]; renderShell(); });
       chips.appendChild(chip);
     });
@@ -1985,7 +2088,7 @@
       var anyFilter = taskFilter.q || taskFilter.kind !== "all" || taskFilter.plant !== "all";
       container.appendChild(el("div", {class:"card empty-fun"}, [
         el("span", {class:"big"}, [taskFilter.status === "done" ? "🌾" : "🌻"]),
-        anyFilter ? "No tasks match these filters." : (taskFilter.status === "done" ? "Nothing finished yet." : "No open tasks — tap “+ New task” to add one.")
+        anyFilter ? tr("No tasks match these filters.") : (taskFilter.status === "done" ? tr("Nothing finished yet.") : tr("No open tasks — tap “+ New task” to add one."))
       ]));
       return;
     }
@@ -2002,17 +2105,17 @@
       byKey[key].items.push(t);
     }
     open.forEach(function(t){
-      if (!t.dueDate) return add("nodate", "Anytime", "", t);
+      if (!t.dueDate) return add("nodate", tr("Anytime"), "", t);
       var n = daysFromToday(t.dueDate);
-      if (t.dueDate < today) return add("overdue", "Overdue", "catchup", t);
-      if (n === 0) return add("today", "Today", "", t);
-      if (n < 7) return add("week", "This week", "", t);
+      if (t.dueDate < today) return add("overdue", tr("Overdue"), "catchup", t);
+      if (n === 0) return add("today", tr("Today"), "", t);
+      if (n < 7) return add("week", tr("This week"), "", t);
       var d = new Date(t.dueDate + "T00:00:00");
-      add("m" + t.dueDate.slice(0,7), MONTH_NAMES[d.getMonth()] + (d.getFullYear() !== new Date().getFullYear() ? " " + d.getFullYear() : ""), "", t);
+      add("m" + t.dueDate.slice(0,7), monthName(d.getMonth()) + (d.getFullYear() !== new Date().getFullYear() ? " " + d.getFullYear() : ""), "", t);
     });
     // "Anytime" last.
-    groups.sort(function(a,b){ return (a.label === "Anytime") - (b.label === "Anytime"); });
-    if (done.length) groups.push({label:"Done", cls:"", items:done});
+    groups.sort(function(a,b){ return (a === byKey.nodate) - (b === byKey.nodate); });
+    if (done.length) groups.push({label:tr("Done"), cls:"", items:done});
 
     var card = el("div", {class:"card"});
     groups.forEach(function(g){
@@ -2028,15 +2131,15 @@
     var isNew = !task;
     showModal(function(container){
       container.appendChild(el("div", {class:"modal-head"}, [
-        el("h3", {style:"font-size:17px;"}, [isNew ? "New task" : "Edit task"]),
-        el("button", {class:"modal-close", "aria-label":"Close", onclick:closeModal}, ["×"])
+        el("h3", {style:"font-size:17px;"}, [isNew ? tr("New task") : tr("Edit task")]),
+        el("button", {class:"modal-close", "aria-label":tr("Close"), onclick:closeModal}, ["×"])
       ]));
-      var titleIn = el("input", {type:"text", placeholder:"e.g. Buy compost", value: task ? task.title : ""});
-      var notesIn = el("textarea", {placeholder:"Notes (optional)", style:"min-height:64px;"});
+      var titleIn = el("input", {type:"text", placeholder:tr("e.g. Buy compost"), value: task ? task.title : ""});
+      var notesIn = el("textarea", {placeholder:tr("Notes (optional)"), style:"min-height:64px;"});
       notesIn.value = task ? (task.description || "") : "";
       var dateIn = el("input", {type:"date", value: task ? (task.dueDate || "") : todayISO()});
       var selectedPlant = task ? (task.plantId || "") : (opts.plantId || "");
-      var plantSel = el("select", {}, [el("option", {value:""}, ["Not about a specific plant"])].concat(state.plants.map(function(p){
+      var plantSel = el("select", {}, [el("option", {value:""}, [tr("Not about a specific plant")])].concat(state.plants.map(function(p){
         var o = el("option", {value:p.id}, [p.name]);
         if (p.id === selectedPlant) o.setAttribute("selected","selected");
         return o;
@@ -2047,34 +2150,36 @@
 
       // Quick due-date shortcuts.
       var quick = el("div", {class:"option-chips", style:"margin-top:8px;"});
-      [["Today",0],["Tomorrow",1],["In a week",7],["In 2 weeks",14]].forEach(function(q){
+      [[tr("Today"),0],[tr("Tomorrow"),1],[tr("In a week"),7],[tr("In 2 weeks"),14]].forEach(function(q){
         var b = el("button", {class:"option-chip", type:"button", style:"min-height:36px;padding:6px 12px;font-size:13px;"}, [q[0]]);
         b.addEventListener("click", function(){ dateIn.value = addDays(todayISO(), q[1]); });
         quick.appendChild(b);
       });
 
-      container.appendChild(el("div", {class:"field"}, [el("label", {}, ["What needs doing?"]), titleIn]));
-      container.appendChild(el("div", {class:"field"}, [el("label", {}, ["Due"]), dateIn, quick]));
-      container.appendChild(el("div", {class:"field"}, [el("label", {}, ["Plant"]), plantSel]));
-      container.appendChild(el("div", {class:"field"}, [el("label", {}, ["Notes"]), notesIn]));
-      container.appendChild(el("label", {class:"check-row", for:"tfPhoto"}, [photoIn, "Ask me for a photo when I do this"]));
+      container.appendChild(el("div", {class:"field"}, [el("label", {}, [tr("What needs doing?")]), titleIn]));
+      container.appendChild(el("div", {class:"field"}, [el("label", {}, [tr("Due")]), dateIn, quick]));
+      container.appendChild(el("div", {class:"field"}, [el("label", {}, [tr("Plant")]), plantSel]));
+      container.appendChild(el("div", {class:"field"}, [el("label", {}, [tr("Notes")]), notesIn]));
+      container.appendChild(el("label", {class:"check-row", for:"tfPhoto"}, [photoIn, tr("Ask me for a photo when I do this")]));
       if (task && task.kind === "scheduled"){
-        container.appendChild(el("div", {class:"about-locked", style:"margin-top:10px;"}, ["📅 This task comes from " + (task.plantName || "a plant") + "'s care guide. Updating the care guide rebuilds these tasks, which would undo edits to upcoming ones."]));
+        container.appendChild(el("div", {class:"about-locked", style:"margin-top:10px;"}, [task.plantName
+          ? tr("📅 This task comes from {name}'s care guide. Updating the care guide rebuilds these tasks, which would undo edits to upcoming ones.", {name:task.plantName})
+          : tr("📅 This task comes from a plant's care guide. Updating the care guide rebuilds these tasks, which would undo edits to upcoming ones.")]));
       }
       container.appendChild(err);
 
-      var saveBtn = el("button", {class:"btn btn-primary"}, [isNew ? "Add task" : "Save changes"]);
+      var saveBtn = el("button", {class:"btn btn-primary"}, [isNew ? tr("Add task") : tr("Save changes")]);
       saveBtn.addEventListener("click", async function(){
         var title = titleIn.value.trim();
-        if (!title){ err.textContent = "Give the task a name."; titleIn.focus(); return; }
-        if (!dateIn.value){ err.textContent = "Pick a due date."; return; }
+        if (!title){ err.textContent = tr("Give the task a name."); titleIn.focus(); return; }
+        if (!dateIn.value){ err.textContent = tr("Pick a due date."); return; }
         var plant = state.plants.find(function(p){ return p.id === plantSel.value; });
         var body = {
           title: title, description: notesIn.value.trim(), dueDate: dateIn.value,
           plantId: plant ? plant.id : null, plantName: plant ? plant.name : "",
           requestsPhoto: photoIn.checked
         };
-        saveBtn.disabled = true; saveBtn.textContent = "Saving…";
+        saveBtn.disabled = true; saveBtn.textContent = tr("Saving…");
         try {
           if (isNew){
             body.kind = "manual"; body.reason = "Added by you"; body.severity = "info";
@@ -2085,12 +2190,12 @@
           }
           await loadGardenData();
         } catch(e){
-          saveBtn.disabled = false; saveBtn.textContent = "Couldn't save — try again";
+          saveBtn.disabled = false; saveBtn.textContent = tr("Couldn't save — try again");
           return;
         }
         buzz();
         closeModal();
-        showToast(isNew ? "Task added — due " + relativeDay(body.dueDate) : "Task updated");
+        showToast(isNew ? tr("Task added — due {when}", {when:relativeDay(body.dueDate)}) : tr("Task updated"));
       });
       var row = el("div", {class:"row", style:"justify-content:space-between;margin-top:6px;"});
       if (!isNew) row.appendChild(deleteTaskButton(task)); else row.appendChild(el("span"));
@@ -2115,31 +2220,31 @@
         setTimeout(function(){ if (armed && !btn.disabled){ armed = false; btn.classList.remove("armed"); idle(); } }, 3500);
         return;
       }
-      btn.disabled = true; btn.textContent = "Deleting…";
+      btn.disabled = true; btn.textContent = tr("Deleting…");
       try { await doDelete(); }
-      catch(e){ btn.disabled = false; btn.textContent = "Couldn't delete — try again"; }
+      catch(e){ btn.disabled = false; btn.textContent = tr("Couldn't delete — try again"); }
     });
     return btn;
   }
 
   function deleteTaskButton(t){
-    return confirmDeleteButton("Delete", "Tap again to delete", async function(){
+    return confirmDeleteButton(tr("Delete"), tr("Tap again to delete"), async function(){
       await api("/tasks/" + t.id, {method:"DELETE"});
       state.tasks = state.tasks.filter(function(x){ return x.id !== t.id; });
       closeModal();
-      showToast("Deleted “" + t.title + "”");
+      showToast(tr("Deleted “{title}”", {title:t.title}));
     });
   }
 
   // Removing a plant also removes its tasks (ON DELETE CASCADE server-side).
   function removePlantButton(p){
-    return confirmDeleteButton("Remove " + p.name + " from my garden", "Tap again to remove it for good", async function(){
+    return confirmDeleteButton(tr("Remove {name} from my garden", {name:p.name}), tr("Tap again to remove it for good"), async function(){
       await api("/plants/" + p.id, {method:"DELETE"});
       state.plants = state.plants.filter(function(x){ return x.id !== p.id; });
       state.tasks = state.tasks.filter(function(t){ return t.plantId !== p.id; });
       modalOpenFor = null;
       closeModal();
-      showToast("Removed " + p.name);
+      showToast(tr("Removed {name}", {name:p.name}));
     });
   }
 
@@ -2155,22 +2260,22 @@
     if (state.plants.length === 0){
       var sec = el("div", {class:"card empty-fun"}, [
         el("span", {class:"big"}, ["🪴"]),
-        el("h2", {style:"font-size:20px;margin-bottom:6px;"}, ["Your garden is empty"]),
-        el("p", {style:"margin:0 0 14px;"}, ["Add your first plant and I'll build a care guide and a yearly schedule for it."])
+        el("h2", {style:"font-size:20px;margin-bottom:6px;"}, [tr("Your garden is empty")]),
+        el("p", {style:"margin:0 0 14px;"}, [tr("Add your first plant and I'll build a care guide and a yearly schedule for it.")])
       ]);
-      var ctaBtn = el("button", {class:"btn btn-primary"}, ["+ Add your first plant"]);
+      var ctaBtn = el("button", {class:"btn btn-primary"}, [tr("+ Add your first plant")]);
       ctaBtn.addEventListener("click", openPlantWizard);
       sec.appendChild(ctaBtn);
       wrap.appendChild(sec);
       return wrap;
     }
 
-    var addBtn = el("button", {class:"btn btn-sm btn-primary"}, ["+ Add a plant"]);
+    var addBtn = el("button", {class:"btn btn-sm btn-primary"}, [tr("+ Add a plant")]);
     addBtn.addEventListener("click", openPlantWizard);
     var head = el("div", {class:"section-title", style:"margin-top:4px;align-items:center;"}, [
       el("div", {}, [
-        el("h2", {}, ["My garden"]),
-        el("div", {class:"hint"}, [state.plants.length + (state.plants.length === 1 ? " plant" : " plants")])
+        el("h2", {}, [tr("My garden")]),
+        el("div", {class:"hint"}, [trn(state.plants.length, "1 plant", "{n} plants")])
       ]),
       addBtn
     ]);
@@ -2180,19 +2285,19 @@
     var results = el("div", {});
 
     if (state.plants.length >= 6){
-      var search = el("input", {type:"search", placeholder:"Search your plants", value:lib.q, "aria-label":"Search your plants", autocomplete:"off"});
+      var search = el("input", {type:"search", placeholder:tr("Search your plants"), value:lib.q, "aria-label":tr("Search your plants"), autocomplete:"off"});
       search.addEventListener("input", function(){ lib.q = search.value; renderLibraryResults(results); });
       toolbar.appendChild(el("div", {class:"search-wrap"}, [el("span", {html:icon("search")}), search]));
     }
 
     // Filter chips: All, Needs attention (if any), then one per plant type present.
-    var chips = el("div", {class:"filter-chips", role:"toolbar", "aria-label":"Filter plants"});
-    var filters = [["all", "All"]];
+    var chips = el("div", {class:"filter-chips", role:"toolbar", "aria-label":tr("Filter plants")});
+    var filters = [["all", tr("All")]];
     var needYou = state.plants.filter(function(p){ return plantAlerts(p).count > 0; }).length;
-    if (needYou) filters.push(["attn", "🔴 Needs you · " + needYou]);
+    if (needYou) filters.push(["attn", tr("🔴 Needs you · {n}", {n:needYou})]);
     var typesPresent = [];
     state.plants.forEach(function(p){ var ty = p.type || "other"; if (typesPresent.indexOf(ty) === -1) typesPresent.push(ty); });
-    if (typesPresent.length > 1) typesPresent.forEach(function(ty){ filters.push(["type:" + ty, typeEmoji(ty) + " " + ty.charAt(0).toUpperCase() + ty.slice(1)]); });
+    if (typesPresent.length > 1) typesPresent.forEach(function(ty){ filters.push(["type:" + ty, typeEmoji(ty) + " " + typeLabel(ty)]); });
     if (filters.every(function(f){ return f[0] !== lib.filter; })) lib.filter = "all";
     filters.forEach(function(f){
       var chip = el("button", {class:"fchip" + (lib.filter === f[0] ? " active" : ""), "aria-pressed": lib.filter === f[0] ? "true" : "false"}, [f[1]]);
@@ -2201,14 +2306,14 @@
     });
     toolbar.appendChild(chips);
 
-    var seg = el("div", {class:"seg", role:"group", "aria-label":"View"});
-    [["grid","Grid"],["spots","By spot"]].forEach(function(v){
+    var seg = el("div", {class:"seg", role:"group", "aria-label":tr("View")});
+    [["grid",tr("Grid")],["spots",tr("By spot")]].forEach(function(v){
       var b = el("button", {class: lib.view === v[0] ? "active" : "", "aria-pressed": lib.view === v[0] ? "true" : "false"}, [v[1]]);
       b.addEventListener("click", function(){ lib.view = v[0]; localSet(LIB_VIEW_KEY, v[0]); renderShell(); });
       seg.appendChild(b);
     });
-    var sortSel = el("select", {class:"sort-select", "aria-label":"Sort plants"}, [
-      ["name","A → Z"], ["care","Needs care soonest"], ["newest","Newest first"]
+    var sortSel = el("select", {class:"sort-select", "aria-label":tr("Sort plants")}, [
+      ["name",tr("A → Z")], ["care",tr("Needs care soonest")], ["newest",tr("Newest first")]
     ].map(function(o){ var opt = el("option", {value:o[0]}, [o[1]]); if (lib.sort === o[0]) opt.setAttribute("selected","selected"); return opt; }));
     sortSel.addEventListener("change", function(){ lib.sort = sortSel.value; renderLibraryResults(results); });
     toolbar.appendChild(el("div", {class:"lib-toolbar-row"}, [seg, sortSel]));
@@ -2225,7 +2330,7 @@
       if (lib.filter === "attn" && !plantAlerts(p).count) return false;
       if (lib.filter.indexOf("type:") === 0 && (p.type || "other") !== lib.filter.slice(5)) return false;
       if (!q) return true;
-      return [p.name, p.type, p.spot, p.species].some(function(v){ return v && String(v).toLowerCase().indexOf(q) !== -1; });
+      return [p.name, p.type, typeLabel(p.type), p.spot, optLabel(p.spot), p.species].some(function(v){ return v && String(v).toLowerCase().indexOf(q) !== -1; });
     });
     if (lib.sort === "newest"){
       list.sort(function(a,b){ return String(b.createdAt||"").localeCompare(String(a.createdAt||"")); });
@@ -2234,9 +2339,9 @@
         var t = nextTaskFor(p.id);
         return (p.healthStatus === "needs_attention" ? "0" : "1") + (t ? t.dueDate : "9999");
       };
-      list.sort(function(a,b){ return key(a).localeCompare(key(b)) || a.name.localeCompare(b.name); });
+      list.sort(function(a,b){ return key(a).localeCompare(key(b)) || a.name.localeCompare(b.name, I18N.locale()); });
     } else {
-      list.sort(function(a,b){ return a.name.localeCompare(b.name); });
+      list.sort(function(a,b){ return a.name.localeCompare(b.name, I18N.locale()); });
     }
     return list;
   }
@@ -2245,13 +2350,13 @@
     container.innerHTML = "";
     var list = filteredSortedPlants();
     if (!list.length){
-      container.appendChild(el("div", {class:"no-results"}, [lib.q ? "No plants match “" + lib.q.trim() + "”." : "No plants match this filter."]));
+      container.appendChild(el("div", {class:"no-results"}, [lib.q ? tr("No plants match “{q}”.", {q:lib.q.trim()}) : tr("No plants match this filter.")]));
       return;
     }
     if (lib.view === "spots"){
       var groups = {}, order = [];
       list.forEach(function(p){
-        var spot = p.spot || "Somewhere in the garden";
+        var spot = optLabel(p.spot) || tr("Somewhere in the garden");
         if (!groups[spot]){ groups[spot] = []; order.push(spot); }
         groups[spot].push(p);
       });
@@ -2260,7 +2365,7 @@
         var row = el("div", {class:"hscroll", "data-keep-scroll":"shelf-" + spot});
         groups[spot].forEach(function(p){ row.appendChild(roundPlantTile(p)); });
         container.appendChild(el("section", {class:"shelf"}, [
-          el("div", {class:"shelf-head"}, [el("h3", {}, [spot]), el("span", {class:"hint"}, [groups[spot].length + (groups[spot].length === 1 ? " plant" : " plants")])]),
+          el("div", {class:"shelf-head"}, [el("h3", {}, [spot]), el("span", {class:"hint"}, [trn(groups[spot].length, "1 plant", "{n} plants")])]),
           row
         ]));
       });
@@ -2290,15 +2395,15 @@
     var overdue = state.tasks.filter(function(t){ return t.plantId === p.id && t.status !== "done" && t.dueDate && t.dueDate < today; })
       .sort(function(a,b){ return a.dueDate.localeCompare(b.dueDate); });
     overdue.forEach(function(t){
-      items.push({key:"task", text:t.title, sub:relativeDay(t.dueDate), btn:"Open", fn:function(){ openTaskDetail(t.id, {allowComplete:true}); }});
+      items.push({key:"task", text:t.title, sub:relativeDay(t.dueDate), btn:tr("Open"), fn:function(){ openTaskDetail(t.id, {allowComplete:true}); }});
     });
     if (p.healthStatus === "needs_attention"){
-      items.push({key:"issue", text:(p.activeIssue && p.activeIssue.description) || "A problem is being tracked", sub:"problem being tracked", btn:"See issue",
+      items.push({key:"issue", text:(p.activeIssue && p.activeIssue.description) || tr("A problem is being tracked"), sub:tr("problem being tracked"), btn:tr("See issue"),
         fn:function(){ plantDetailTab = "issues"; openPlantDetail(p.id, {keepTab:true}); }});
     }
     if (!(p.researched && p.careProfile)){
       careReadiness(p).missing.forEach(function(m){
-        items.push({key:m.key, text:m.label, sub:"needed for its care guide", btn:"Add",
+        items.push({key:m.key, text:m.label, sub:tr("needed for its care guide"), btn:tr("Add"),
           fn:function(){ openQuickAnswer(p, m.key); }});
       });
     }
@@ -2306,7 +2411,7 @@
   }
   function countBadge(n, extraClass){
     if (!n) return null;
-    return el("span", {class:"count-badge" + (extraClass ? " " + extraClass : ""), "aria-label": n + (n === 1 ? " notification" : " notifications")}, [n > 9 ? "9+" : String(n)]);
+    return el("span", {class:"count-badge" + (extraClass ? " " + extraClass : ""), "aria-label": trn(n, "1 notification", "{n} notifications")}, [n > 9 ? "9+" : String(n)]);
   }
 
   // The one-line status that goes on the bottom of a plant's rim:
@@ -2316,13 +2421,13 @@
     if (next){
       var cat = taskCategory(next);
       if (next.dueDate < todayISO()) return {text:"⚠ " + relativeDay(next.dueDate), tone:"warn"};
-      return {text:cat.emoji + " " + cat.key.replace("other","task") + " " + relativeDay(next.dueDate), tone:""};
+      return {text:cat.emoji + " " + tr("{job} {when}", {job:tr(cat.label), when:relativeDay(next.dueDate)}), tone:""};
     }
     if (!(p.researched && p.careProfile)){
       var rd = careReadiness(p);
-      return rd.ready ? {text:"✨ ready for a guide", tone:""} : {text:"🔒 " + rd.missing.length + (rd.missing.length === 1 ? " detail" : " details") + " to go", tone:"lock"};
+      return rd.ready ? {text:"✨ " + tr("ready for a guide"), tone:""} : {text:"🔒 " + trn(rd.missing.length, "1 detail to go", "{n} details to go"), tone:"lock"};
     }
-    return {text:"✓ all caught up", tone:""};
+    return {text:"✓ " + tr("all caught up"), tone:""};
   }
 
   // A round plant tile: the photo (or emoji) in a circle, a ring around it
@@ -2363,11 +2468,11 @@
       svg,
       countBadge(alerts.count, "rt-badge")
     ]);
-    var label = p.name + ", " + lvl.name + " " + k.score + "%, " + status.text.replace(/^[^\w]+/, "") + (alerts.count ? ", " + alerts.count + " need" + (alerts.count === 1 ? "s" : "") + " attention" : "");
+    var label = p.name + ", " + lvl.name + " " + k.score + "%, " + status.text.replace(/^[^\w\u0590-\u05FF]+/, "") + (alerts.count ? ", " + trn(alerts.count, "1 needs attention", "{n} need attention") : "");
     var tile = el("button", {class:"round-tile", "aria-label":label}, [
       disc,
       el("span", {class:"rt-name"}, [p.name]),
-      el("span", {class:"rt-sub"}, [(p.type ? p.type.charAt(0).toUpperCase() + p.type.slice(1) : "Plant") + (p.spot ? " · " + p.spot : "")])
+      el("span", {class:"rt-sub"}, [(p.type ? typeLabel(p.type) : tr("Plant")) + (p.spot ? " · " + optLabel(p.spot) : "")])
     ]);
     tile.addEventListener("click", function(){ openPlantDetail(p.id); });
     return tile;
@@ -2375,7 +2480,7 @@
   function addPlantTile(){
     var tile = el("button", {class:"round-tile add"}, [
       el("span", {class:"rt-disc"}, [el("span", {class:"rt-photo rt-add"}, ["+"])]),
-      el("span", {class:"rt-name"}, ["Add a plant"]),
+      el("span", {class:"rt-name"}, [tr("Add a plant")]),
       el("span", {class:"rt-sub"}, [" "])
     ]);
     tile.addEventListener("click", openPlantWizard);
@@ -2387,7 +2492,7 @@
     var a = plantAlerts(p);
     if (!a.count) return null;
     var box = el("div", {class:"alerts-block"}, [
-      el("div", {class:"alerts-head"}, [countBadge(a.count), el("span", {}, [a.count === 1 ? "1 thing needs you" : a.count + " things need you"])])
+      el("div", {class:"alerts-head"}, [countBadge(a.count), el("span", {}, [trn(a.count, "1 thing needs you", "{n} things need you")])])
     ]);
     a.items.forEach(function(it){
       var b = el("button", {class:"btn btn-sm"}, [it.btn]);
@@ -2405,41 +2510,54 @@
     var s = state.settings || {};
     showModal(function(container){
       container.appendChild(el("div", {class:"modal-head"}, [
-        el("h3", {}, ["Settings"]),
-        el("button", {class:"modal-close", onclick:closeModal}, ["×"])
+        el("h3", {}, [tr("Settings")]),
+        el("button", {class:"modal-close", "aria-label":tr("Close"), onclick:closeModal}, ["×"])
+      ]));
+      // Takes effect right away (and is saved) — the rest of the form
+      // waits for Save.
+      container.appendChild(el("div", {class:"field"}, [
+        el("label", {}, [tr("Language")]),
+        languagePicker(function(){ renderShell(); openSettings(); }),
+        el("div", {style:"font-size:12px;color:var(--ink-faint);margin-top:4px;"}, [tr("The app, care guides, tips and answers are all written in this language.")])
       ]));
       // A GPS-only location is saved as "Current location"; ask for a real
       // name instead — it's what the AI uses to name the place (the
       // coordinates stay, for weather and the measured climate).
       var label = (s.location && s.location.label) || "";
-      var locInput = el("input", {type:"text", value: /^(current location|unspecified)$/i.test(label) ? "" : label, placeholder:"Town and country, e.g. Modi'in, Israel"});
+      var locInput = el("input", {type:"text", value: /^(current location|unspecified)$/i.test(label) ? "" : label, placeholder:tr("Town and country, e.g. Modi'in, Israel")});
       container.appendChild(el("div", {class:"field"}, [
-        el("label", {}, ["Garden location"]), locInput,
-        el("div", {style:"font-size:12px;color:var(--ink-faint);margin-top:4px;"}, ["Used to time care guides and tips to your local climate" + (s.location && s.location.lat != null ? " (weather uses your saved GPS point)." : ".")])
+        el("label", {}, [tr("Garden location")]), locInput,
+        el("div", {style:"font-size:12px;color:var(--ink-faint);margin-top:4px;"}, [s.location && s.location.lat != null
+          ? tr("Used to time care guides and tips to your local climate (weather uses your saved GPS point).")
+          : tr("Used to time care guides and tips to your local climate.")])
       ]));
 
+      // Saved as the English day name (the daily job matches on it).
       var days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
-      var daySelect = el("select", {}, days.map(function(d){
-        var o = el("option", {value:d}, [d]);
+      var daySelect = el("select", {}, days.map(function(d, i){
+        var o = el("option", {value:d}, [dayName(i)]);
         if ((s.photoCheckinDay || "Friday") === d) o.setAttribute("selected","selected");
         return o;
       }));
-      container.appendChild(el("div", {class:"field"}, [el("label", {}, ["Weekly photo check-in day"]), daySelect]));
-
-
+      container.appendChild(el("div", {class:"field"}, [el("label", {}, [tr("Weekly photo check-in day")]), daySelect]));
 
       container.appendChild(el("p", {style:"font-size:12.5px;color:var(--ink-faint);margin:0 0 16px;"}, [
-        "Weather and care checks run early each morning. New plants get researched within about an hour of adding them — no need to wait for the daily check-in."
+        tr("Weather and care checks run early each morning. New plants get researched within about an hour of adding them — no need to wait for the daily check-in.")
       ]));
 
-      var saveBtn = el("button", {class:"btn btn-primary btn-sm"}, ["Save"]);
+      var translateBlock = translateGardenBlock();
+      if (translateBlock) container.appendChild(translateBlock);
+      var rebuild = rebuildGuidesBlock();
+      if (rebuild) container.appendChild(rebuild);
+
+      var saveBtn = el("button", {class:"btn btn-primary btn-sm"}, [tr("Save")]);
       saveBtn.addEventListener("click", async function(){
-        saveBtn.disabled = true; saveBtn.textContent = "Saving…";
+        saveBtn.disabled = true; saveBtn.textContent = tr("Saving…");
         var loc = Object.assign({}, s.location, {label: locInput.value.trim() || label || "Unspecified"});
         try {
           await api("/settings", {method:"PATCH", body:{location:loc, photoCheckinDay:daySelect.value}});
         } catch(e){
-          saveBtn.disabled = false; saveBtn.textContent = "Couldn't save — try again";
+          saveBtn.disabled = false; saveBtn.textContent = tr("Couldn't save — try again");
           return;
         }
         state.settings = Object.assign({}, state.settings, {location:loc, photoCheckinDay:daySelect.value});
@@ -2447,6 +2565,138 @@
       });
       container.appendChild(saveBtn);
     });
+  }
+
+  // ---- Translating what's already saved. Content written before a
+  // language switch (care guides, tasks, tips, diagnoses) or typed in
+  // another language (plant names) stays in that language until it's
+  // translated: POST /api/translate, once per plant and once for the rest
+  // (lib/handlers/translate-garden.js). Offered by a banner on Home and in
+  // Settings whenever something is still in another language. ----
+  var PRESET_VALUES = [].concat(SPOT_OPTIONS, AGE_OPTIONS, SUN_OPTIONS, WATERING_OPTIONS, GROUND_OPTIONS);
+  function isForeign(s){
+    if (typeof s !== "string" || !s.trim() || PRESET_VALUES.indexOf(s) !== -1) return false;
+    var hebrew = /[\u0590-\u05FF]/.test(s);
+    return I18N.isRTL() ? (/[A-Za-z]/.test(s) && !hebrew) : hebrew;
+  }
+  function plantIsForeign(p){
+    var texts = [p.name, p.notes, p.sizeInfo, p.activeIssue && p.activeIssue.description]
+      .concat(Object.keys(p.careProfile || {}).map(function(k){ return p.careProfile[k]; }))
+      .concat((p.yearlySchedule || []).map(function(e){ return e.title + " " + e.note; }))
+      .concat((p.photos || []).map(function(ph){ return ph.summary; }));
+    if (!PRESET_VALUES.some(function(v){ return v === p.spot; })) texts.push(p.spot);
+    return texts.some(isForeign) || state.tasks.some(function(t){ return t.plantId === p.id && (isForeign(t.title) || isForeign(t.description)); });
+  }
+  function foreignContent(){
+    var label = (state.settings && state.settings.location && state.settings.location.label) || "";
+    return {
+      plants: state.plants.filter(plantIsForeign),
+      general: state.tasks.some(function(t){ return !t.plantId && (isForeign(t.title) || isForeign(t.description)); }) ||
+        (!/^(current location|unspecified)$/i.test(label) && isForeign(label)) || !!(state.weather && isForeign(state.weather.alert))
+    };
+  }
+  var translating = null; // {done, total} while a translation runs
+  var translateBannerHidden = false;
+  async function translateGarden(onProgress){
+    var f = foreignContent();
+    var jobs = f.plants.map(function(p){ return {body:{plantId:p.id}, name:p.name}; });
+    if (f.general) jobs.push({body:{scope:"general"}, name:tr("Tasks and location")});
+    var failed = [];
+    translating = {done:0, total:jobs.length};
+    for (var i = 0; i < jobs.length; i++){
+      translating.name = jobs[i].name;
+      if (onProgress) onProgress();
+      try { await api("/translate", {method:"POST", body:jobs[i].body}); }
+      catch(e){ failed.push(jobs[i].name); }
+      translating.done = i + 1;
+    }
+    translating = null;
+    tipsByMonth = {}; // plant names changed — tips are rewritten for them
+    try { await loadGardenData(); } catch(e){}
+    return failed;
+  }
+  function translateHeadline(){
+    return I18N.isRTL() ? tr("Some of your garden is still in English") : tr("Some of your garden is still in Hebrew");
+  }
+  function translateButtonLabel(){
+    return I18N.isRTL() ? tr("Translate everything into Hebrew") : tr("Translate everything into English");
+  }
+  function translateBanner(){
+    if (translateBannerHidden && !translating) return null;
+    var f = foreignContent();
+    if (!translating && !f.plants.length && !f.general) return null;
+    var status = el("div", {class:"ready-sub"}, [translating
+      ? tr("Translating {name} ({n} of {total})…", {name:translating.name, n:translating.done + 1, total:translating.total})
+      : tr("Plant names, care guides and tasks written before the language switch. One tap translates them all — about half a minute.")]);
+    var btn = el("button", {class:"btn btn-primary btn-sm"}, [translateButtonLabel()]);
+    btn.disabled = !!translating;
+    btn.addEventListener("click", async function(){
+      btn.disabled = true;
+      var failed = await translateGarden(function(){ if (!modalOpenFor) renderShell(); });
+      // Done either way: what's left is something the model chose to keep
+      // (a Latin botanical name) or a failure the toast reports — Settings
+      // still offers another run.
+      translateBannerHidden = true;
+      renderShell();
+      showToast(failed.length ? tr("Translated, except: {names} — try again in a moment.", {names:failed.join(", ")}) : tr("🌐 Everything is translated"));
+    });
+    var later = el("button", {class:"btn btn-ghost btn-sm"}, [tr("Not now")]);
+    later.addEventListener("click", function(){ translateBannerHidden = true; renderShell(); });
+    return el("div", {class:"ready-card translate-card"}, [
+      el("div", {class:"ready-head"}, [
+        el("span", {class:"ready-icon", "aria-hidden":"true"}, ["🌐"]),
+        el("div", {}, [el("div", {class:"ready-title"}, [translateHeadline()]), status])
+      ]),
+      el("div", {class:"row", style:"gap:8px;margin-top:10px;"}, [btn, translating ? null : later])
+    ]);
+  }
+  function translateGardenBlock(){
+    var f = foreignContent();
+    if (!f.plants.length && !f.general) return null;
+    var status = el("div", {class:"thinking", style:"min-height:18px;margin-top:6px;"});
+    var btn = el("button", {class:"btn btn-sm btn-primary"}, [translateButtonLabel()]);
+    btn.addEventListener("click", async function(){
+      btn.disabled = true;
+      var failed = await translateGarden(function(){
+        status.textContent = tr("Translating {name} ({n} of {total})…", {name:translating.name, n:translating.done + 1, total:translating.total});
+      });
+      btn.disabled = false;
+      status.textContent = failed.length ? tr("Translated, except: {names} — try again in a moment.", {names:failed.join(", ")}) : tr("🌐 Everything is translated");
+    });
+    return el("div", {class:"field", style:"border-top:1px solid var(--line);padding-top:14px;"}, [
+      el("label", {}, [translateHeadline()]),
+      el("div", {style:"font-size:12.5px;color:var(--ink-soft);margin-bottom:8px;"}, [tr("Plant names, care guides and tasks written before the language switch. One tap translates them all — about half a minute.")]),
+      btn, status
+    ]);
+  }
+
+  // Settings' "Rebuild all care guides": re-runs every plant's care guide
+  // (and its year of tasks) one after another — for after a language or
+  // location change, so existing guides catch up. Pending care-guide tasks
+  // are replaced; done ones stay.
+  function rebuildGuidesBlock(){
+    var plants = state.plants.filter(function(p){ return p.researched && p.careProfile; });
+    if (!plants.length) return null;
+    var status = el("div", {class:"thinking", style:"min-height:18px;margin-top:6px;"});
+    var btn = el("button", {class:"btn btn-sm"}, [trn(plants.length, "Rebuild the care guide", "Rebuild all {n} care guides")]);
+    btn.addEventListener("click", async function(){
+      btn.disabled = true;
+      var failed = [];
+      for (var i = 0; i < plants.length; i++){
+        status.textContent = tr("Rebuilding {name} ({n} of {total})…", {name:plants[i].name, n:i + 1, total:plants.length});
+        if (!(await researchPlant(plants[i].id))) failed.push(plants[i].name);
+      }
+      try { await loadGardenData(); } catch(e){}
+      btn.disabled = false;
+      status.textContent = failed.length
+        ? tr("Done, except: {names} — try again in a moment.", {names:failed.join(", ")})
+        : tr("All care guides rebuilt.");
+    });
+    return el("div", {class:"field", style:"border-top:1px solid var(--line);padding-top:14px;"}, [
+      el("label", {}, [tr("Care guides")]),
+      el("div", {style:"font-size:12.5px;color:var(--ink-soft);margin-bottom:8px;"}, [tr("Rewrites each plant's care guide and its year of care tasks — in your language, for your location. About half a minute per plant.")]),
+      btn, status
+    ]);
   }
 
   // ---- Calendar section: Year/Month/Week views over the `tasks` collection. ----
@@ -2482,10 +2732,9 @@
   }
   function yearlyPlanLabel(){
     var d = new Date(yearlyPlan.anchor + "T00:00:00");
-    if (yearlyPlan.mode === "month") return MONTH_NAMES[d.getMonth()] + " " + d.getFullYear();
+    if (yearlyPlan.mode === "month") return monthName(d.getMonth()) + " " + d.getFullYear();
     var week = weekDatesFor(d), first = week[0], last = week[6];
-    var fmt = function(x){ return MONTH_NAMES[x.getMonth()].slice(0,3) + " " + x.getDate(); };
-    return fmt(first) + " – " + (first.getMonth()===last.getMonth() ? last.getDate() : fmt(last)) + ", " + last.getFullYear();
+    return shortDate(first) + " – " + shortDate(last) + ", " + last.getFullYear();
   }
   function shiftYearlyAnchor(dir){
     var now = new Date();
@@ -2500,19 +2749,19 @@
 
   function calendarSection(){
     var container = el("div", {class:"card"});
-    container.appendChild(el("div", {class:"section-head"}, [el("h2", {}, ["Calendar"])]));
+    container.appendChild(el("div", {class:"section-head"}, [el("h2", {}, [tr("Calendar")])]));
     if (state.plants.length === 0){
-      container.appendChild(el("div", {class:"empty"}, ["Add a plant and its yearly schedule will show up here."]));
+      container.appendChild(el("div", {class:"empty"}, [tr("Add a plant and its yearly schedule will show up here.")]));
       return container;
     }
     var anyResearched = state.plants.some(function(p){ return p.researched; });
     if (!anyResearched){
-      container.appendChild(el("div", {class:"empty", style:"margin-bottom:10px;"}, ["Still building schedules for your plants — check back shortly."]));
+      container.appendChild(el("div", {class:"empty", style:"margin-bottom:10px;"}, [tr("Still building schedules for your plants — check back shortly.")]));
     }
 
-    var yearBtn = el("button", {class:"btn btn-sm" + (yearlyPlan.mode==="year" ? "" : " btn-ghost")}, ["Year"]);
-    var monthBtn = el("button", {class:"btn btn-sm" + (yearlyPlan.mode==="month" ? "" : " btn-ghost")}, ["Month"]);
-    var weekBtn = el("button", {class:"btn btn-sm" + (yearlyPlan.mode==="week" ? "" : " btn-ghost")}, ["Week"]);
+    var yearBtn = el("button", {class:"btn btn-sm" + (yearlyPlan.mode==="year" ? "" : " btn-ghost")}, [tr("Year")]);
+    var monthBtn = el("button", {class:"btn btn-sm" + (yearlyPlan.mode==="month" ? "" : " btn-ghost")}, [tr("Month")]);
+    var weekBtn = el("button", {class:"btn btn-sm" + (yearlyPlan.mode==="week" ? "" : " btn-ghost")}, [tr("Week")]);
     yearBtn.addEventListener("click", function(){ yearlyPlan.mode = "year"; renderShell(); });
     monthBtn.addEventListener("click", function(){ yearlyPlan.mode = "month"; renderShell(); });
     weekBtn.addEventListener("click", function(){ yearlyPlan.mode = "week"; renderShell(); });
@@ -2520,10 +2769,12 @@
       el("div", {class:"row", style:"gap:6px;"}, [yearBtn, monthBtn, weekBtn])
     ]);
     if (yearlyPlan.mode === "year"){
-      header.appendChild(el("div", {style:"font-weight:600;font-size:14.5px;"}, ["Next 12 months"]));
+      header.appendChild(el("div", {style:"font-weight:600;font-size:14.5px;"}, [tr("Next 12 months")]));
     } else {
-      var prevBtn = el("button", {class:"btn btn-ghost btn-sm"}, ["←"]);
-      var nextBtn = el("button", {class:"btn btn-ghost btn-sm"}, ["→"]);
+      // The row mirrors in right-to-left, so "previous" sits on the right.
+      var rtl = I18N.isRTL();
+      var prevBtn = el("button", {class:"btn btn-ghost btn-sm", "aria-label":tr("Previous")}, [rtl ? "→" : "←"]);
+      var nextBtn = el("button", {class:"btn btn-ghost btn-sm", "aria-label":tr("Next")}, [rtl ? "←" : "→"]);
       prevBtn.addEventListener("click", function(){ shiftYearlyAnchor(-1); renderShell(); });
       nextBtn.addEventListener("click", function(){ shiftYearlyAnchor(1); renderShell(); });
       header.appendChild(el("div", {class:"row", style:"align-items:center;gap:8px;"}, [prevBtn, el("div", {style:"font-weight:600;font-size:14.5px;min-width:150px;text-align:center;"}, [yearlyPlanLabel()]), nextBtn]));
@@ -2553,9 +2804,9 @@
       Object.keys(map).forEach(function(dateStr){
         if (dateStr.slice(0, 7) === prefix) count += map[dateStr].filter(function(t){ return t.status !== "done"; }).length;
       });
-      var cell = el("button", {style:"text-align:left;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--surface);cursor:pointer;" + (k === 0 ? "box-shadow:inset 0 0 0 2px var(--moss);" : "")}, [
-        el("div", {style:"font-weight:600;font-size:14px;margin-bottom:4px;"}, [MONTH_NAMES[d.getMonth()] + (d.getFullYear() !== now.getFullYear() ? " " + d.getFullYear() : "")]),
-        el("div", {style:"font-size:12px;color:var(--ink-faint);"}, [count + (count===1 ? " open task" : " open tasks")])
+      var cell = el("button", {style:"text-align:start;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--surface);cursor:pointer;" + (k === 0 ? "box-shadow:inset 0 0 0 2px var(--moss);" : "")}, [
+        el("div", {style:"font-weight:600;font-size:14px;margin-bottom:4px;"}, [monthName(d.getMonth()) + (d.getFullYear() !== now.getFullYear() ? " " + d.getFullYear() : "")]),
+        el("div", {style:"font-size:12px;color:var(--ink-faint);"}, [trn(count, "1 open task", "{n} open tasks")])
       ]);
       cell.addEventListener("click", (function(y, m){ return function(){
         yearlyPlan.mode = "month";
@@ -2576,9 +2827,9 @@
     var totalCells = Math.ceil((startDow + daysInMonth) / 7) * 7;
 
     var grid = el("div", {style:"display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden;"});
-    DAY_NAMES.forEach(function(d){
-      grid.appendChild(el("div", {style:"background:var(--surface-sunk);padding:6px 4px;font-size:10.5px;font-weight:700;text-align:center;color:var(--ink-faint);text-transform:uppercase;"}, [d.slice(0,3)]));
-    });
+    for (var dw=0; dw<7; dw++){
+      grid.appendChild(el("div", {style:"background:var(--surface-sunk);padding:6px 4px;font-size:10.5px;font-weight:700;text-align:center;color:var(--ink-faint);text-transform:uppercase;"}, [dayShort(dw)]));
+    }
     for (var i=0;i<totalCells;i++){
       var dayNum = i - startDow + 1;
       if (dayNum < 1 || dayNum > daysInMonth){
@@ -2588,7 +2839,7 @@
       var dateStr = isoDate(year, month+1, dayNum);
       var dayTasks = map[dateStr] || [];
       var isToday = dateStr === todayStr;
-      var cell = el("div", {style:"background:var(--surface);min-height:66px;padding:4px;display:flex;flex-direction:column;gap:4px;cursor:pointer;" + (isToday ? "box-shadow:inset 0 0 0 2px var(--moss);" : ""), title:"Show this week"});
+      var cell = el("div", {style:"background:var(--surface);min-height:66px;padding:4px;display:flex;flex-direction:column;gap:4px;cursor:pointer;" + (isToday ? "box-shadow:inset 0 0 0 2px var(--moss);" : ""), title:tr("Show this week")});
       // Tapping a day opens its week as a readable list — the dots alone
       // are too small to hit reliably on a phone.
       cell.addEventListener("click", (function(ds){ return function(){ yearlyPlan.mode = "week"; yearlyPlan.anchor = ds; renderShell(); }; })(dateStr));
@@ -2597,7 +2848,7 @@
         var dots = el("div", {style:"display:flex;flex-wrap:wrap;gap:3px;"});
         dayTasks.slice(0,8).forEach(function(t){
           var dot = el("button", {
-            title: t.title + (t.plantName ? " — " + t.plantName : "") + (t.status==="done" ? " (done)" : ""),
+            title: t.title + (t.plantName ? " — " + t.plantName : "") + (t.status==="done" ? " (" + tr("done") + ")" : ""),
             style:"width:8px;height:8px;padding:0;border:none;border-radius:50%;cursor:pointer;flex:none;background:" + (t.plantId ? plantColorFor(t.plantId) : "var(--ink-faint)") + ";opacity:" + (t.status==="done" ? "0.35" : "1") + ";"
           });
           dot.addEventListener("click", (function(taskId){ return function(e){ e.stopPropagation(); openYearlyTaskDetail(taskId); }; })(t.id));
@@ -2621,13 +2872,13 @@
       var isToday = dateStr === todayStr;
       var section = el("div", {style:"margin-bottom:14px;"});
       section.appendChild(el("div", {style:"font-size:12px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:" + (isToday?"var(--moss)":"var(--ink-faint)") + ";margin-bottom:6px;"}, [
-        DAY_NAMES[d.getDay()] + " · " + MONTH_NAMES[d.getMonth()].slice(0,3) + " " + d.getDate() + (isToday ? " · today" : "")
+        dayName(d.getDay()) + " · " + shortDate(d) + (isToday ? " · " + tr("today") : "")
       ]));
       if (dayTasks.length === 0){
-        section.appendChild(el("div", {class:"empty", style:"padding:0 0 4px;"}, ["Nothing scheduled"]));
+        section.appendChild(el("div", {class:"empty", style:"padding:0 0 4px;"}, [tr("Nothing scheduled")]));
       } else {
         dayTasks.forEach(function(t){
-          var row = el("button", {style:"display:flex;align-items:flex-start;gap:9px;width:100%;text-align:left;border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:6px;background:var(--surface);cursor:pointer;" + (t.status==="done" ? "opacity:.55;" : "")}, [
+          var row = el("button", {style:"display:flex;align-items:flex-start;gap:9px;width:100%;text-align:start;border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:6px;background:var(--surface);cursor:pointer;" + (t.status==="done" ? "opacity:.55;" : "")}, [
             el("span", {style:"flex:none;width:9px;height:9px;margin-top:4px;border-radius:50%;background:" + (t.plantId ? plantColorFor(t.plantId) : "var(--ink-faint)") + ";"}),
             el("div", {style:"flex:1;min-width:0;"}, [
               el("div", {style:"font-size:13.5px;font-weight:600;color:var(--ink);" + (t.status==="done" ? "text-decoration:line-through;" : "")}, [t.title + (t.plantName ? " — " + t.plantName : "")]),
@@ -2659,12 +2910,12 @@
     showModal(function(container){
       // Hero: the latest photo full-bleed (or a colored placeholder), with
       // the name over it.
-      var closeBtn = el("button", {class:"hero-close", "aria-label":"Close", onclick:function(){ modalOpenFor=null; closeModal(); }}, ["×"]);
+      var closeBtn = el("button", {class:"hero-close", "aria-label":tr("Close"), onclick:function(){ modalOpenFor=null; closeModal(); }}, ["×"]);
       container.appendChild(el("div", {class:"detail-hero"}, [
         plantPhotoEl(p),
         el("div", {class:"plant-overlay"}, [
           el("h3", {class:"plant-card-name", style:"color:inherit;"}, [p.name]),
-          el("div", {class:"plant-card-sub"}, [[p.type, p.spot, p.species].filter(Boolean).join(" · ")])
+          el("div", {class:"plant-card-sub"}, [[typeLabel(p.type), optLabel(p.spot), p.species].filter(Boolean).join(" · ")])
         ]),
         closeBtn
       ]));
@@ -2675,9 +2926,9 @@
 
       var issueCount = state.tasks.filter(function(t){ return t.plantId === p.id && t.kind === "issue"; }).length;
       var tabs = [
-        ["overview", "Overview"],
-        ["care", "Care guide"],
-        ["issues", "Issues" + ((p.activeIssue && p.activeIssue.description) ? " •" : (issueCount ? " (" + issueCount + ")" : ""))]
+        ["overview", tr("Overview")],
+        ["care", tr("Care guide")],
+        ["issues", tr("Issues") + ((p.activeIssue && p.activeIssue.description) ? " •" : (issueCount ? " (" + issueCount + ")" : ""))]
       ];
       var seg = el("div", {class:"seg", role:"tablist"});
       tabs.forEach(function(t){
@@ -2708,15 +2959,15 @@
     // (plantAlertsBlock, right below) — don't repeat them here.
     var next = pk.missing.filter(function(m){ return !m.unlocks; })[0];
     if (!next){
-      main.appendChild(el("div", {class:"level-next"}, [pk.missing.length ? "Fill in what's listed below to unlock its care guide." : "I know this plant well — keep the photos coming!"]));
+      main.appendChild(el("div", {class:"level-next"}, [pk.missing.length ? tr("Fill in what's listed below to unlock its care guide.") : tr("I know this plant well — keep the photos coming!")]));
       return block;
     }
     var stepLabel, stepFn;
     if (next.key === "guide"){
-      stepLabel = "✨ Build care guide";
+      stepLabel = tr("✨ Build care guide");
       stepFn = function(){ plantDetailTab = "care"; openPlantDetail(p.id, {keepTab:true, keepScroll:true}); };
     } else if (next.key === "photo"){
-      stepLabel = next.text.charAt(0).toUpperCase() + next.text.slice(1);
+      stepLabel = tr("+ Add photo");
       stepFn = function(){
         // The photo picker lives on the Overview tab — open it there. Still
         // inside this click, so the browser allows opening the file picker.
@@ -2725,10 +2976,10 @@
         if (input) input.click();
       };
     } else {
-      stepLabel = next.btn || ({age:"Add its age", species:"Add species"})[next.key] || "Add";
+      stepLabel = next.btn || ({age:tr("Add its age"), species:tr("Add species")})[next.key] || tr("Add");
       stepFn = function(){ openQuickAnswer(p, next.key); };
     }
-    main.appendChild(el("div", {class:"level-next"}, ["Next step: " + next.text + (next.unlocks ? " — it helps unlock the care guide." : ".")]));
+    main.appendChild(el("div", {class:"level-next"}, [next.unlocks ? tr("Next step: {step} — it helps unlock the care guide.", {step:next.text}) : tr("Next step: {step}.", {step:next.text})]));
     var btn = el("button", {class:"btn btn-sm level-btn"}, [stepLabel]);
     btn.addEventListener("click", function(){ stepFn(btn); });
     block.appendChild(btn);
@@ -2742,23 +2993,25 @@
     var photos = (p.photos || []).slice();
     if (photos.length >= 2){
       var first = photos[0], latest = photos[photos.length-1];
-      var cmp = el("div", {class:"compare", style:"--split:50%;"}, [
-        el("img", {src:first.dataUrl, alt:"First photo"}),
-        el("img", {class:"compare-after", src:latest.dataUrl, alt:"Latest photo"}),
+      // Left-to-right in every language: first photo on the left, the
+      // slider's value is the split position from the left edge.
+      var cmp = el("div", {class:"compare", dir:"ltr", style:"--split:50%;"}, [
+        el("img", {src:first.dataUrl, alt:tr("First photo")}),
+        el("img", {class:"compare-after", src:latest.dataUrl, alt:tr("Latest photo")}),
         el("div", {class:"compare-line"}),
         el("span", {class:"compare-tag", style:"left:8px;"}, [fmtDate(first.date)]),
-        el("span", {class:"compare-tag", style:"right:8px;"}, ["Now"])
+        el("span", {class:"compare-tag", style:"right:8px;"}, [tr("Now")])
       ]);
-      var range = el("input", {type:"range", min:"0", max:"100", value:"50", "aria-label":"Compare first and latest photo"});
+      var range = el("input", {type:"range", min:"0", max:"100", value:"50", "aria-label":tr("Compare first and latest photo")});
       range.addEventListener("input", function(){ cmp.style.setProperty("--split", range.value + "%"); });
       cmp.appendChild(range);
       wrap.appendChild(cmp);
-      wrap.appendChild(el("div", {class:"hint", style:"font-size:12px;color:var(--ink-faint);margin-bottom:10px;"}, ["Drag to compare your first photo with the latest."]));
+      wrap.appendChild(el("div", {class:"hint", style:"font-size:12px;color:var(--ink-faint);margin-bottom:10px;"}, [tr("Drag to compare your first photo with the latest.")]));
     }
     var row = el("div", {class:"hscroll", style:"margin-bottom:8px;"});
     photos.slice().reverse().forEach(function(ph){
       row.appendChild(el("div", {class:"journal-card"}, [
-        el("img", {src:ph.dataUrl, alt:"Photo from " + fmtDate(ph.date), loading:"lazy"}),
+        el("img", {src:ph.dataUrl, alt:tr("Photo from {date}", {date:fmtDate(ph.date)}), loading:"lazy"}),
         el("div", {class:"jc-body"}, [
           el("div", {class:"jc-date"}, [fmtDate(ph.date)]),
           (ph.summary || ph.userNote) ? el("div", {class:"jc-text"}, [ph.summary || ph.userNote]) : null
@@ -2789,30 +3042,30 @@
   // this version keeps each fact in exactly one place. ----
   function buildPlantOverviewTab(container, p){
     container.appendChild(el("div", {class:"section-head", style:"margin-bottom:4px;"}, [
-      el("h3", {style:"font-size:13px;"}, ["About this " + (p.type || "plant")])
+      el("h3", {style:"font-size:13px;"}, [tr("About this {type}", {type: (function(){ var ty = p.type && p.type !== "other" ? typeLabel(p.type) : tr("plant"); return I18N.isRTL() ? ty : ty.toLowerCase(); })()})])
     ]));
     if (p.careProfile){
       var blurbBits = [p.careProfile.sun, p.careProfile.watering, p.careProfile.soil].filter(Boolean);
       var aboutRow = el("div", {style:"font-size:13.5px;color:var(--ink-soft);margin-bottom:16px;"});
       if (blurbBits.length) aboutRow.appendChild(document.createTextNode(blurbBits.join(" · ") + "  "));
-      var readMoreBtn = el("button", {class:"btn btn-ghost btn-sm", style:"padding:2px 4px;"}, ["Read more →"]);
+      var readMoreBtn = el("button", {class:"btn btn-ghost btn-sm", style:"padding:2px 4px;"}, [tr("Read more →")]);
       readMoreBtn.addEventListener("click", function(){ plantDetailTab = "care"; openPlantDetail(p.id, {keepTab:true}); });
       aboutRow.appendChild(readMoreBtn);
       container.appendChild(aboutRow);
     } else {
       var rd = careReadiness(p);
-      var goCare = el("button", {class:"link-btn"}, [rd.ready ? "Build it now →" : "See what's needed →"]);
+      var goCare = el("button", {class:"link-btn"}, [rd.ready ? tr("Build it now →") : tr("See what's needed →")]);
       goCare.addEventListener("click", function(){ plantDetailTab = "care"; openPlantDetail(p.id, {keepTab:true, keepScroll:true}); });
       container.appendChild(el("div", {class:"about-locked"}, [
         el("span", {"aria-hidden":"true"}, [rd.ready ? "✨" : "🔒"]),
-        el("span", {}, [rd.ready ? "No care guide yet — it's ready to build. " : "No care guide yet — needs " + missingLabelList(rd.missing) + ". "]),
+        el("span", {}, [(rd.ready ? tr("No care guide yet — it's ready to build.") : tr("No care guide yet — needs {missing}.", {missing:missingLabelList(rd.missing)})) + " "]),
         goCare
       ]));
     }
 
     container.appendChild(el("div", {class:"section-head", style:"margin-bottom:8px;"}, [
-      el("h3", {style:"font-size:15px;"}, ["Growth journal"]),
-      el("span", {class:"hint"}, [(p.photos && p.photos.length) ? p.photos.length + (p.photos.length === 1 ? " photo" : " photos") : "photos over time"])
+      el("h3", {style:"font-size:15px;"}, [tr("Growth journal")]),
+      el("span", {class:"hint"}, [(p.photos && p.photos.length) ? trn(p.photos.length, "1 photo", "{n} photos") : tr("photos over time")])
     ]));
 
     if (p.photos && p.photos.length){
@@ -2820,12 +3073,12 @@
       var latest = p.photos[p.photos.length-1];
       if (latest.summary) container.appendChild(el("div", {class:"agent-note", style:"margin-bottom:10px;"}, [latest.summary]));
     } else {
-      container.appendChild(el("div", {class:"empty", style:"margin-bottom:8px;"}, ["No photos yet — add one and I'll start a journal so you can watch it grow."]));
+      container.appendChild(el("div", {class:"empty", style:"margin-bottom:8px;"}, [tr("No photos yet — add one and I'll start a journal so you can watch it grow.")]));
     }
 
-    var noteInput = el("textarea", {placeholder:"Anything you've noticed? (optional)", style:"margin-bottom:6px;min-height:44px;"});
+    var noteInput = el("textarea", {placeholder:tr("Anything you've noticed? (optional)"), style:"margin-bottom:6px;min-height:44px;"});
     container.appendChild(noteInput);
-    var addPhotoLabel = el("label", {class:"btn btn-sm", style:"display:inline-block;"}, [p.photos && p.photos.length ? "+ Update photo" : "+ Add photo"]);
+    var addPhotoLabel = el("label", {class:"btn btn-sm", style:"display:inline-block;"}, [p.photos && p.photos.length ? tr("+ Update photo") : tr("+ Add photo")]);
     var addPhotoInput = el("input", {type:"file", accept:"image/*", class:"sr-only overview-photo-input"});
     addPhotoLabel.appendChild(addPhotoInput);
     var addPhotoResult = el("div", {});
@@ -2836,12 +3089,12 @@
       var dataUrl = await resizeImage(f);
       addPhotoResult.innerHTML = "";
       addPhotoResult.appendChild(el("img", {class:"photo-preview", src:dataUrl}));
-      var thinking = el("div", {class:"thinking"}, ["Taking a look…"]);
+      var thinking = el("div", {class:"thinking"}, [tr("Taking a look…")]);
       addPhotoResult.appendChild(thinking);
       var result = await analyzeAndApplyPlantPhoto(dataUrl, p, noteInput.value.trim());
       thinking.remove();
       if (!result){
-        addPhotoResult.appendChild(el("div", {class:"empty"}, [lastAnalysisMessage || ANALYZE_FAILED_MESSAGE]));
+        addPhotoResult.appendChild(el("div", {class:"empty"}, [tr(lastAnalysisMessage || ANALYZE_FAILED_MESSAGE)]));
         return;
       }
       if (result.__photoOnly){
@@ -2849,8 +3102,8 @@
         // plainly (and let the user dismiss it) rather than silently
         // reopening as if nothing happened.
         await loadGardenData();
-        addPhotoResult.appendChild(el("div", {class:"empty"}, [lastAnalysisMessage || PHOTO_ONLY_MESSAGE]));
-        var continueBtn = el("button", {class:"btn btn-sm", style:"margin-top:8px;"}, ["OK"]);
+        addPhotoResult.appendChild(el("div", {class:"empty"}, [tr(lastAnalysisMessage || PHOTO_ONLY_MESSAGE)]));
+        var continueBtn = el("button", {class:"btn btn-sm", style:"margin-top:8px;"}, [tr("OK")]);
         continueBtn.addEventListener("click", function(){ openPlantDetail(p.id, {keepTab:true}); });
         addPhotoResult.appendChild(continueBtn);
         return;
@@ -2866,18 +3119,18 @@
     var detailsList = el("div", {style:"margin-top:14px;"});
     if (p.sizeInfo){
       var sizeRow = el("div", {class:"detail-row"}, [
-        el("div", {style:"font-size:13px;"}, [el("span", {style:"color:var(--ink-faint);"}, ["Size "]), p.sizeInfo]),
-        el("span", {style:"font-size:11px;color:var(--ink-faint);"}, ["from photos"])
+        el("div", {style:"font-size:13px;"}, [el("span", {style:"color:var(--ink-faint);"}, [tr("Size") + " "]), p.sizeInfo]),
+        el("span", {style:"font-size:11px;color:var(--ink-faint);"}, [tr("from photos")])
       ]);
       detailsList.appendChild(sizeRow);
     }
-    [["spot","Spot"],["species","Species"]].forEach(function(f){
+    [["spot",tr("Spot")],["species",tr("Species")]].forEach(function(f){
       var v = plantFieldValue(p, f[0]);
       var r = el("div", {class:"detail-row"}, [
-        v ? el("div", {style:"font-size:13px;"}, [el("span", {style:"color:var(--ink-faint);"}, [f[1] + " "]), v])
-          : el("div", {style:"font-size:13px;color:var(--ink-faint);"}, [f[1] + " — not set"])
+        v ? el("div", {style:"font-size:13px;"}, [el("span", {style:"color:var(--ink-faint);"}, [f[1] + " "]), optLabel(v)])
+          : el("div", {style:"font-size:13px;color:var(--ink-faint);"}, [tr("{label} — not set", {label:f[1]})])
       ]);
-      var b = el("button", {class:"btn btn-ghost btn-sm"}, [v ? "Edit" : "Add"]);
+      var b = el("button", {class:"btn btn-ghost btn-sm"}, [v ? tr("Edit") : tr("Add")]);
       b.addEventListener("click", function(){ openQuickAnswer(p, f[0]); });
       r.appendChild(b);
       detailsList.appendChild(r);
@@ -2886,10 +3139,10 @@
       var entry = detailEntryOf(p, q.key);
       var detailRow = el("div", {class:"detail-row"});
       var textPart = entry
-        ? el("div", {style:"font-size:13px;"}, [el("span", {style:"color:var(--ink-faint);"}, [q.shortLabel + " "]), entry.display || entry.raw])
-        : el("div", {style:"font-size:13px;color:var(--ink-faint);"}, [q.shortLabel + " — not set"]);
+        ? el("div", {style:"font-size:13px;"}, [el("span", {style:"color:var(--ink-faint);"}, [tr(q.shortLabel) + " "]), optLabel(entry.display || entry.raw)])
+        : el("div", {style:"font-size:13px;color:var(--ink-faint);"}, [tr("{label} — not set", {label:tr(q.shortLabel)})]);
       detailRow.appendChild(textPart);
-      var detailBtn = el("button", {class:"btn btn-ghost btn-sm"}, [entry ? "Edit" : "Add"]);
+      var detailBtn = el("button", {class:"btn btn-ghost btn-sm"}, [entry ? tr("Edit") : tr("Add")]);
       detailBtn.addEventListener("click", function(){
         if (QUICK_FIELDS[q.key]) openQuickAnswer(p, q.key);
         else openGetToKnowPlant(p, {onlyIndex: qi});
@@ -2899,25 +3152,27 @@
     });
     container.appendChild(detailsList);
 
-    var knowBtn = el("button", {class:"btn btn-sm", style:"margin-top:12px;"}, ["Walk through all details"]);
+    var knowBtn = el("button", {class:"btn btn-sm", style:"margin-top:12px;"}, [tr("Walk through all details")]);
     knowBtn.addEventListener("click", function(){ openGetToKnowPlant(p); });
     container.appendChild(knowBtn);
 
-    var addTaskBtn = el("button", {class:"btn btn-ghost btn-sm", style:"margin-top:16px;display:block;"}, ["+ Add a task for this plant"]);
+    var addTaskBtn = el("button", {class:"btn btn-ghost btn-sm", style:"margin-top:16px;display:block;"}, [tr("+ Add a task for this plant")]);
     addTaskBtn.addEventListener("click", function(){ modalOpenFor = null; openTaskForm(null, {plantId:p.id}); });
     container.appendChild(addTaskBtn);
 
-    var askBtn = el("button", {class:"btn btn-ghost btn-sm", style:"margin-top:4px;display:block;"}, ["Ask about this plant →"]);
+    var askBtn = el("button", {class:"btn btn-ghost btn-sm", style:"margin-top:4px;display:block;"}, [tr("Ask about this plant →")]);
     askBtn.addEventListener("click", function(){
       closeModal(); modalOpenFor=null;
-      openAsk("About my " + p.name + ": ");
+      openAsk(tr("About my {name}: ", {name:p.name}));
     });
     container.appendChild(askBtn);
 
     var nTasks = state.tasks.filter(function(t){ return t.plantId === p.id; }).length;
     container.appendChild(el("div", {class:"danger-zone"}, [
       removePlantButton(p),
-      el("div", {class:"danger-note"}, ["Deletes its photos, details" + (nTasks ? " and its " + nTasks + (nTasks === 1 ? " task" : " tasks") : "") + ". This can't be undone."])
+      el("div", {class:"danger-note"}, [nTasks
+        ? trn(nTasks, "Deletes its photos, details and its 1 task. This can't be undone.", "Deletes its photos, details and its {n} tasks. This can't be undone.")
+        : tr("Deletes its photos and details. This can't be undone.")])
     ]));
   }
 
@@ -2932,19 +3187,19 @@
       return;
     }
     container.appendChild(el("div", {class:"section-head", style:"margin-bottom:8px;"}, [
-      el("h3", {style:"font-size:15px;"}, ["Care guide"]),
-      el("span", {class:"hint"}, ["for this plant, in its spot"])
+      el("h3", {style:"font-size:15px;"}, [tr("Care guide")]),
+      el("span", {class:"hint"}, [tr("for this plant, in its spot")])
     ]));
     var cg = el("dl", {class:"care-grid"});
-    var fields = [["soil","Soil / ground"],["sun","Sunlight"],["watering","Watering"],["nutrients","Nutrients"],["pruning","Pruning"],["frostSensitive","Frost sensitivity"],["commonIssues","Watch for"]];
+    var fields = [["soil",tr("Soil / ground")],["sun",tr("Sunlight")],["watering",tr("Watering")],["nutrients",tr("Nutrients")],["pruning",tr("Pruning")],["frostSensitive",tr("Cold sensitivity")],["commonIssues",tr("Watch for")]];
     fields.forEach(function(f){
       if (p.careProfile[f[0]]) cg.appendChild(el("div", {}, [el("dt",{},[f[1]]), el("dd",{},[p.careProfile[f[0]]])]));
     });
     container.appendChild(cg);
-    var researchBtn = el("button", {class:"btn btn-sm btn-ghost", style:"margin-top:8px;"}, ["Update care guide"]);
-    researchBtn.title = "Rebuilds this guide from the species plus what you've told me about its spot. Won't touch its photos, details or health.";
+    var researchBtn = el("button", {class:"btn btn-sm btn-ghost", style:"margin-top:8px;"}, [tr("Update care guide")]);
+    researchBtn.title = tr("Rebuilds this guide from the species plus what you've told me about its spot. Won't touch its photos, details or health.");
     researchBtn.addEventListener("click", async function(){
-      researchBtn.disabled = true; researchBtn.textContent = "Updating…";
+      researchBtn.disabled = true; researchBtn.textContent = tr("Updating…");
       var ok = await researchPlant(p.id);
       if (ok){
         // Refresh everything (this plant, the grade bar, the yearly schedule
@@ -2953,7 +3208,7 @@
         await loadGardenData();
         openPlantDetail(p.id, {keepTab:true});
       } else {
-        researchBtn.textContent = "Couldn't update — try again";
+        researchBtn.textContent = tr("Couldn't update — try again");
         researchBtn.disabled = false;
       }
     });
@@ -2968,20 +3223,20 @@
   // detail (comments, photo, mark-done) as This week/Upcoming/the calendar. ----
   function buildPlantIssuesTab(container, p){
     container.appendChild(el("div", {class:"section-head", style:"margin-bottom:8px;"}, [
-      el("h3", {style:"font-size:15px;"}, ["Tracked issues"]),
-      el("span", {class:"hint"}, ["active + history"])
+      el("h3", {style:"font-size:15px;"}, [tr("Tracked issues")]),
+      el("span", {class:"hint"}, [tr("active + history")])
     ]));
 
     if (p.activeIssue && p.activeIssue.description){
       container.appendChild(el("div", {class:"agent-note", style:"margin-bottom:6px;"}, [
-        "Currently tracking, since " + fmtDate(p.activeIssue.since) + ": " + p.activeIssue.description
+        tr("Currently tracking, since {date}: {issue}", {date:fmtDate(p.activeIssue.since), issue:p.activeIssue.description})
       ]));
-      container.appendChild(el("div", {class:"empty", style:"margin-bottom:14px;"}, ["Each plant tracks one issue at a time — reporting a new problem below will replace this as the active issue."]));
+      container.appendChild(el("div", {class:"empty", style:"margin-bottom:14px;"}, [tr("Each plant tracks one issue at a time — reporting a new problem below will replace this as the active issue.")]));
     } else {
-      container.appendChild(el("div", {class:"empty", style:"margin-bottom:14px;"}, ["Nothing currently being tracked — looking healthy."]));
+      container.appendChild(el("div", {class:"empty", style:"margin-bottom:14px;"}, [tr("Nothing currently being tracked — looking healthy.")]));
     }
 
-    var reportBtn = el("button", {class:"btn btn-sm", style:"margin-bottom:16px;"}, [p.activeIssue && p.activeIssue.description ? "Report a different problem" : "Report a problem"]);
+    var reportBtn = el("button", {class:"btn btn-sm", style:"margin-bottom:16px;"}, [p.activeIssue && p.activeIssue.description ? tr("Report a different problem") : tr("Report a problem")]);
     reportBtn.addEventListener("click", function(){ openReportProblem(p); });
     container.appendChild(reportBtn);
 
@@ -2989,9 +3244,9 @@
       .filter(function(t){ return t.plantId === p.id && t.kind === "issue"; })
       .sort(function(a,b){ return (b.createdAt||"").localeCompare(a.createdAt||""); });
 
-    container.appendChild(el("div", {style:"font-size:12.5px;font-weight:600;color:var(--ink-soft);margin-bottom:6px;"}, ["History"]));
+    container.appendChild(el("div", {style:"font-size:12.5px;font-weight:600;color:var(--ink-soft);margin-bottom:6px;"}, [tr("History")]));
     if (issueTasks.length === 0){
-      container.appendChild(el("div", {class:"empty"}, ["No issues reported yet for this plant."]));
+      container.appendChild(el("div", {class:"empty"}, [tr("No issues reported yet for this plant.")]));
     } else {
       issueTasks.forEach(function(t){ container.appendChild(taskListRow(t)); });
     }
@@ -3009,11 +3264,11 @@
   // short normalized "display" form (normalizeDetailAnswer) so the profile
   // reads as clean facts rather than a transcript of the raw wording.
   var GET_TO_KNOW_QUESTIONS = [
-    {key:"age", shortLabel:"Age", label:"About how old is it?", hint:"How old is this plant, or how long since you planted it?", placeholder:"e.g. planted about 2 years ago"},
-    {key:"yieldPerYear", shortLabel:"Yearly yield", label:"How much does it produce each year?", hint:"Roughly how many fruits, vegetables or flowers a year — skip if not applicable.", placeholder:"e.g. 20-30 lemons a season"},
-    {key:"groundType", shortLabel:"Ground", label:"What's the ground like there?", hint:"Soil type or growing setup at its actual spot.", placeholder:"e.g. clay soil, raised bed, pot with drainage holes"},
-    {key:"watering", shortLabel:"Watering", label:"How do you water it?", hint:"Method, and roughly how often.", placeholder:"e.g. drip irrigation every other day"},
-    {key:"sunExposure", shortLabel:"Sun exposure", label:"How much sun does that spot get?", hint:"Sun exposure at its actual location.", placeholder:"e.g. full sun most of the day, shaded in the afternoon"}
+    {key:"age", shortLabel:N_("Age"), label:N_("About how old is it?"), hint:N_("How old is this plant, or how long since you planted it?"), placeholder:N_("e.g. planted about 2 years ago")},
+    {key:"yieldPerYear", shortLabel:N_("Yearly yield"), label:N_("How much does it produce each year?"), hint:N_("Roughly how many fruits, vegetables or flowers a year — skip if not applicable."), placeholder:N_("e.g. 20-30 lemons a season")},
+    {key:"groundType", shortLabel:N_("Ground"), label:N_("What's the ground like there?"), hint:N_("Soil type or growing setup at its actual spot."), placeholder:N_("e.g. clay soil, raised bed, pot with drainage holes")},
+    {key:"watering", shortLabel:N_("Watering"), label:N_("How do you water it?"), hint:N_("Method, and roughly how often."), placeholder:N_("e.g. drip irrigation every other day")},
+    {key:"sunExposure", shortLabel:N_("Sun exposure"), label:N_("How much sun does that spot get?"), hint:N_("Sun exposure at its actual location."), placeholder:N_("e.g. full sun most of the day, shaded in the afternoon")}
   ];
 
   // Each answer is also turned into a short, standardized "display" label
@@ -3028,19 +3283,19 @@
 
     showModal(function(container){
       container.appendChild(el("div", {class:"modal-head"}, [
-        el("h3", {style:"font-size:17px;"}, ["Get to know " + p.name]),
-        el("button", {class:"modal-close", onclick:closeModal}, ["×"])
+        el("h3", {style:"font-size:17px;"}, [tr("Get to know {name}", {name:p.name})]),
+        el("button", {class:"modal-close", "aria-label":tr("Close"), onclick:closeModal}, ["×"])
       ]));
-      var backBtn = el("button", {class:"btn btn-ghost btn-sm", style:"margin-bottom:14px;"}, ["← Back to plant"]);
+      var backBtn = el("button", {class:"btn btn-ghost btn-sm", style:"margin-bottom:14px;"}, [tr("← Back to plant")]);
       backBtn.addEventListener("click", function(){ openPlantDetail(p.id, {keepTab:true}); });
       container.appendChild(backBtn);
 
       if (qIndex >= GET_TO_KNOW_QUESTIONS.length){
-        container.appendChild(el("h2", {style:"font-size:18px;margin:2px 0 6px;"}, ["All set"]));
+        container.appendChild(el("h2", {style:"font-size:18px;margin:2px 0 6px;"}, [tr("All set")]));
         container.appendChild(el("p", {class:"lead", style:"font-size:13.5px;margin:0 0 14px;"}, [
-          "Saved what you told me — you can revisit any of these anytime from the Profile section on the Overview tab."
+          tr("Saved what you told me — you can revisit any of these anytime from the Overview tab.")
         ]));
-        var doneBtn = el("button", {class:"btn btn-primary"}, ["Back to plant"]);
+        var doneBtn = el("button", {class:"btn btn-primary"}, [tr("Back to plant")]);
         doneBtn.addEventListener("click", function(){ openPlantDetail(p.id, {keepTab:true}); });
         container.appendChild(doneBtn);
         return;
@@ -3048,19 +3303,19 @@
 
       var q = GET_TO_KNOW_QUESTIONS[qIndex];
       if (onlyIndex === null){
-        container.appendChild(el("div", {class:"empty", style:"margin-bottom:2px;"}, ["Question " + (qIndex+1) + " of " + GET_TO_KNOW_QUESTIONS.length]));
+        container.appendChild(el("div", {class:"empty", style:"margin-bottom:2px;"}, [tr("Question {n} of {total}", {n:qIndex+1, total:GET_TO_KNOW_QUESTIONS.length})]));
       }
-      container.appendChild(el("h2", {style:"font-size:18px;margin:2px 0 4px;"}, [q.label]));
-      container.appendChild(el("p", {class:"lead", style:"font-size:13px;margin:0 0 12px;"}, [q.hint]));
+      container.appendChild(el("h2", {style:"font-size:18px;margin:2px 0 4px;"}, [tr(q.label)]));
+      container.appendChild(el("p", {class:"lead", style:"font-size:13px;margin:0 0 12px;"}, [tr(q.hint)]));
 
-      var input = el("textarea", {placeholder:q.placeholder, style:"min-height:56px;"});
+      var input = el("textarea", {placeholder:tr(q.placeholder), style:"min-height:56px;"});
       var existingEntry = detailEntryOf(p, q.key);
       if (existingEntry) input.value = existingEntry.raw;
       container.appendChild(input);
 
       var isLast = onlyIndex === null && qIndex === GET_TO_KNOW_QUESTIONS.length - 1;
-      var skipBtn = el("button", {class:"btn btn-ghost"}, ["Skip"]);
-      var nextBtn = el("button", {class:"btn btn-primary"}, [onlyIndex !== null ? "Save" : (isLast ? "Finish" : "Next →")]);
+      var skipBtn = el("button", {class:"btn btn-ghost"}, [tr("Skip")]);
+      var nextBtn = el("button", {class:"btn btn-primary"}, [onlyIndex !== null ? tr("Save") : (isLast ? tr("Finish") : tr("Next →"))]);
 
       function advance(){
         if (onlyIndex !== null){ openPlantDetail(p.id, {keepTab:true}); }
@@ -3068,7 +3323,7 @@
       }
       skipBtn.addEventListener("click", function(){ advance(); });
       nextBtn.addEventListener("click", async function(){
-        nextBtn.disabled = true; skipBtn.disabled = true; nextBtn.textContent = "Saving…";
+        nextBtn.disabled = true; skipBtn.disabled = true; nextBtn.textContent = tr("Saving…");
         var val = input.value.trim();
         if (val){
           try {
@@ -3078,7 +3333,7 @@
             await loadGardenData();
           } catch(e){
             nextBtn.disabled = false; skipBtn.disabled = false;
-            nextBtn.textContent = "Couldn't save — try again";
+            nextBtn.textContent = tr("Couldn't save — try again");
             return;
           }
           var fresh = state.plants.find(function(x){ return x.id === p.id; });
@@ -3098,18 +3353,18 @@
     var pendingPhoto = null;
     showModal(function(container){
       container.appendChild(el("div", {class:"modal-head"}, [
-        el("h3", {style:"font-size:17px;"}, ["Report a problem — " + p.name]),
-        el("button", {class:"modal-close", onclick:closeModal}, ["×"])
+        el("h3", {style:"font-size:17px;"}, [tr("Report a problem — {name}", {name:p.name})]),
+        el("button", {class:"modal-close", "aria-label":tr("Close"), onclick:closeModal}, ["×"])
       ]));
-      var backBtn = el("button", {class:"btn btn-ghost btn-sm", style:"margin-bottom:14px;"}, ["← Back"]);
+      var backBtn = el("button", {class:"btn btn-ghost btn-sm", style:"margin-bottom:14px;"}, [tr("← Back")]);
       backBtn.addEventListener("click", function(){ openPlantDetail(p.id, {keepTab:true}); });
       container.appendChild(backBtn);
 
-      var descTa = el("textarea", {placeholder:"What are you seeing? e.g. \"leaves are turning yellow at the tips\"", style:"min-height:70px;"});
-      container.appendChild(el("div", {class:"field"}, [el("label",{},["Describe the problem"]), descTa]));
+      var descTa = el("textarea", {placeholder:tr("What are you seeing? e.g. “leaves are turning yellow at the tips”"), style:"min-height:70px;"});
+      container.appendChild(el("div", {class:"field"}, [el("label",{},[tr("Describe the problem")]), descTa]));
 
       var photoResult = el("div", {});
-      var photoLabel = el("label", {class:"btn btn-sm", style:"margin-bottom:10px;display:inline-block;"}, ["+ Attach a photo (optional)"]);
+      var photoLabel = el("label", {class:"btn btn-sm", style:"margin-bottom:10px;display:inline-block;"}, [tr("+ Attach a photo (optional)")]);
       var photoInput = el("input", {type:"file", accept:"image/*", class:"sr-only"});
       photoLabel.appendChild(photoInput);
       container.appendChild(photoLabel);
@@ -3119,30 +3374,30 @@
         pendingPhoto = await resizeImage(f);
         photoResult.innerHTML = "";
         photoResult.appendChild(el("img", {class:"photo-preview", src:pendingPhoto, style:"max-width:200px;"}));
-        photoLabel.textContent = "Photo attached — tap to replace";
+        photoLabel.textContent = tr("Photo attached — tap to replace");
         photoLabel.appendChild(photoInput);
       });
 
       var resultBox = el("div", {});
-      var submitBtn = el("button", {class:"btn btn-primary btn-sm", style:"margin-top:14px;"}, ["Submit"]);
+      var submitBtn = el("button", {class:"btn btn-primary btn-sm", style:"margin-top:14px;"}, [tr("Submit")]);
       submitBtn.addEventListener("click", async function(){
         var text = descTa.value.trim();
         if (!text && !pendingPhoto) return;
-        submitBtn.disabled = true; submitBtn.textContent = "Thinking…";
+        submitBtn.disabled = true; submitBtn.textContent = tr("Thinking…");
         var result = await reportPlantIssue(p, text, pendingPhoto);
-        submitBtn.disabled = false; submitBtn.textContent = "Submit";
+        submitBtn.disabled = false; submitBtn.textContent = tr("Submit");
         resultBox.innerHTML = "";
         if (!result){
-          resultBox.appendChild(el("div", {class:"empty"}, [lastAnalysisMessage || ANALYZE_FAILED_MESSAGE]));
+          resultBox.appendChild(el("div", {class:"empty"}, [tr(lastAnalysisMessage || ANALYZE_FAILED_MESSAGE)]));
           try { await loadGardenData(); } catch(e){}
           return;
         }
         await loadGardenData();
-        resultBox.appendChild(el("div", {class:"agent-note"}, [result.summary || "Got it — I've added care tasks."]));
+        resultBox.appendChild(el("div", {class:"agent-note"}, [result.summary || tr("Got it — I've added care tasks.")]));
         if (!result.__photoOnly){
-          resultBox.appendChild(el("div", {class:"chip chip-warn", style:"margin-top:8px;"}, ["Care tasks added — see This week"]));
+          resultBox.appendChild(el("div", {class:"chip chip-warn", style:"margin-top:8px;"}, [tr("Care tasks added — see This week")]));
         }
-        var doneBtn = el("button", {class:"btn btn-sm", style:"margin-top:12px;display:block;"}, ["Back to plant"]);
+        var doneBtn = el("button", {class:"btn btn-sm", style:"margin-top:12px;display:block;"}, [tr("Back to plant")]);
         doneBtn.addEventListener("click", function(){ openPlantDetail(p.id, {keepTab:true}); });
         resultBox.appendChild(doneBtn);
       });
@@ -3240,14 +3495,14 @@
     askTurns.push({role:"user", content:text});
     renderAskBody();
     var body = document.getElementById("askBody");
-    var thinking = el("div", {class:"thinking"}, ["Thinking…"]);
+    var thinking = el("div", {class:"thinking"}, [tr("Thinking…")]);
     body.appendChild(thinking);
     body.scrollTop = body.scrollHeight;
     try {
       var res = await api("/ask", {method:"POST", body:{turns:askTurns}});
-      askTurns.push({role:"assistant", content:(res && res.text) || "Sorry, I couldn't answer that just now."});
+      askTurns.push({role:"assistant", content:(res && res.text) || tr("Sorry, I couldn't answer that just now.")});
     } catch(e){
-      askTurns.push({role:"assistant", content:"Sorry, I couldn't answer that just now."});
+      askTurns.push({role:"assistant", content:tr("Sorry, I couldn't answer that just now.")});
     }
     renderAskBody();
   }
@@ -3255,11 +3510,12 @@
     var body = document.getElementById("askBody");
     body.innerHTML = "";
     if (askTurns.length === 0){
-      body.appendChild(el("div", {class:"bubble assistant"}, ["Ask me anything about your garden — what to do this week, how a plant's doing, or general advice."]));
+      body.appendChild(el("div", {class:"bubble assistant"}, [tr("Ask me anything about your garden — what to do this week, how a plant's doing, or general advice.")]));
     }
     askTurns.forEach(function(t){ body.appendChild(el("div", {class:"bubble " + t.role}, [t.content])); });
     body.scrollTop = body.scrollHeight;
   }
 
+  applyStaticText();
   boot();
 })();

@@ -88,8 +88,11 @@ create table if not exists settings (
   onboarded          boolean not null default false,
   reminder_hour      int not null default 7,
   photo_checkin_day  text not null default 'Friday',
+  language           text not null default 'he',               -- he | en: the app's and the AI's language
   created_at         timestamptz not null default now()
 );
+-- Added after the table first shipped (also added lazily by lib/language.js).
+alter table settings add column if not exists language text not null default 'he';
 
 -- ---------------------------------------------------------------------
 -- weather — single-row table, mirrors the Artifact's weather/latest doc

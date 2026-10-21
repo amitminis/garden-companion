@@ -23,6 +23,8 @@ const { friendlyWeather } = require('../../lib/weather');
 const { jsonParam } = require('../../lib/mappers');
 const { materializeScheduledTasks } = require('../../lib/schedule');
 const { getGardenContext } = require('../../lib/garden-context');
+const { getLanguage } = require('../../lib/language');
+const { msg } = require('../../lib/messages');
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -91,7 +93,7 @@ module.exports = async function handler(req, res) {
       const weatherData = friendlyWeather(
         forecast,
         location.label,
-        decision && decision.alertWarranted ? (decision.title || 'Weather heads-up') : ''
+        decision && decision.alertWarranted ? (decision.title || msg(garden.language, 'weatherHeadsUp')) : ''
       );
       await sql`
         insert into weather (id, data, updated_at) values (true, ${jsonParam(weatherData)}, now())
@@ -102,7 +104,7 @@ module.exports = async function handler(req, res) {
       if (decision && decision.alertWarranted) {
         await sql`
           insert into tasks (title, description, due_date, status, kind, reason, severity, year, requests_photo)
-          values (${decision.title || 'Weather heads-up'}, ${decision.description || ''}, ${todayISO()},
+          values (${decision.title || msg(garden.language, 'weatherHeadsUp')}, ${decision.description || ''}, ${todayISO()},
                   'pending', 'issue', 'weather alert', 'warning', ${new Date().getFullYear()}, false)
         `;
         summary.alertCreated = true;
@@ -120,10 +122,11 @@ module.exports = async function handler(req, res) {
     if (DAY_NAMES[today.getDay()] === checkinDay) {
       const plants = await sql`select id, name from plants`;
       const year = today.getFullYear();
+      const lang = await getLanguage();
       for (const plant of plants) {
         await sql`
           insert into tasks (plant_id, plant_name, title, description, due_date, status, kind, reason, severity, year, requests_photo)
-          values (${plant.id}, ${plant.name}, ${'Weekly check-in: ' + plant.name}, 'A quick photo to keep track of how it\'s doing.',
+          values (${plant.id}, ${plant.name}, ${msg(lang, 'checkinTitle', { name: plant.name })}, ${msg(lang, 'checkinDesc')},
                   ${todayISO()}, 'pending', 'checkin', 'weekly checkin', 'info', ${year}, true)
         `;
         summary.checkinTasksCreated++;

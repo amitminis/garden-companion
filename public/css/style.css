@@ -78,10 +78,10 @@
   *{box-sizing:border-box;}
   body{
     margin:0; background:var(--ground); color:var(--ink);
-    font-family:"Work Sans",system-ui,sans-serif; font-size:15px; line-height:1.5;
+    font-family:"Work Sans","Heebo",system-ui,sans-serif; font-size:15px; line-height:1.5;
     -webkit-font-smoothing:antialiased;
   }
-  h1,h2,h3{ font-family:"Fraunces","Georgia",serif; font-weight:600; text-wrap:balance; margin:0; color:var(--ink); }
+  h1,h2,h3{ font-family:"Fraunces","Frank Ruhl Libre","Georgia",serif; font-weight:600; text-wrap:balance; margin:0; color:var(--ink); }
   .mono{ font-family:"JetBrains Mono",ui-monospace,monospace; }
   a{ color:var(--moss); }
   button{ font-family:inherit; }
@@ -150,15 +150,15 @@
     display:flex; align-items:center; gap:18px; padding:16px 20px;
   }
   .weather .icon-lg{ width:34px; height:34px; flex:none; color:var(--moss); }
-  .weather .temp{ font-family:"Fraunces",serif; font-size:26px; font-weight:600; }
+  .weather .temp{ font-family:"Fraunces","Frank Ruhl Libre",serif; font-size:26px; font-weight:600; }
   .weather .desc{ color:var(--ink-soft); font-size:13.5px; }
   .weather .loc{ color:var(--ink-faint); font-size:12px; margin-top:2px; }
-  .weather .alert{ margin-left:auto; }
+  .weather .alert{ margin-inline-start:auto; }
 
   /* ---- tasks ---- */
   .task-mini{
     display:flex; align-items:center; gap:9px; width:100%; padding:11px 4px; border:none; background:none;
-    border-bottom:1px solid var(--line); cursor:pointer; text-align:left; font-family:inherit; color:var(--ink);
+    border-bottom:1px solid var(--line); cursor:pointer; text-align:start; font-family:inherit; color:var(--ink);
     border-radius:6px;
   }
   .task-mini:last-child{ border-bottom:none; }
@@ -182,7 +182,7 @@
   .plant-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:14px; }
   .plant-card{
     background:var(--surface); border:1px solid var(--line); border-radius:12px; overflow:hidden;
-    cursor:pointer; text-align:left; padding:0; box-shadow:var(--shadow);
+    cursor:pointer; text-align:start; padding:0; box-shadow:var(--shadow);
   }
   .plant-thumb{
     width:100%; aspect-ratio:4/3; background:var(--surface-sunk); object-fit:cover; display:block;
@@ -222,10 +222,10 @@
   .progress-dots span.active{ background:var(--moss); }
   .progress-dots span.filled{ background:var(--moss-tint); }
 
-  .chat-log{ display:flex; flex-direction:column; gap:10px; max-height:280px; overflow-y:auto; margin-bottom:12px; padding-right:2px; }
+  .chat-log{ display:flex; flex-direction:column; gap:10px; max-height:280px; overflow-y:auto; margin-bottom:12px; padding-inline-end:2px; }
   .bubble{ padding:10px 13px; border-radius:12px; font-size:13.5px; max-width:88%; white-space:pre-wrap; }
-  .bubble.assistant{ background:var(--moss-tint); color:var(--moss-strong); align-self:flex-start; border-bottom-left-radius:3px; }
-  .bubble.user{ background:var(--surface-sunk); color:var(--ink); align-self:flex-end; border-bottom-right-radius:3px; }
+  .bubble.assistant{ background:var(--moss-tint); color:var(--moss-strong); align-self:flex-start; border-end-start-radius:3px; }
+  .bubble.user{ background:var(--surface-sunk); color:var(--ink); align-self:flex-end; border-end-end-radius:3px; }
   .chat-input-row{ display:flex; gap:8px; }
   .chat-input-row textarea{ flex:1; min-height:44px; }
 
@@ -243,19 +243,19 @@
 
   /* ---- ask panel ---- */
   .ask-fab{
-    position:fixed; right:22px; bottom:22px; z-index:40;
+    position:fixed; inset-inline-end:22px; bottom:22px; z-index:40;
     background:var(--moss); color:var(--moss-tint); border:none; border-radius:100px;
     padding:13px 20px 13px 16px; display:flex; align-items:center; gap:8px; font-weight:600;
     box-shadow:var(--shadow); cursor:pointer; font-size:14px;
   }
   .ask-panel{
-    position:fixed; right:22px; bottom:88px; width:340px; max-width:calc(100vw - 32px);
+    position:fixed; inset-inline-end:22px; bottom:88px; width:340px; max-width:calc(100vw - 32px);
     max-height:60vh; background:var(--surface); border:1px solid var(--line); border-radius:16px;
     box-shadow:var(--shadow); display:flex; flex-direction:column; z-index:41; overflow:hidden;
   }
   .ask-panel[hidden]{ display:none; }
   .ask-head{ padding:12px 16px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center; }
-  .ask-head strong{ font-family:"Fraunces",serif; font-size:15px; }
+  .ask-head strong{ font-family:"Fraunces","Frank Ruhl Libre",serif; font-size:15px; }
   .ask-body{ flex:1; overflow-y:auto; padding:12px 16px; display:flex; flex-direction:column; gap:10px; }
   .ask-foot{ padding:10px 12px; border-top:1px solid var(--line); display:flex; gap:8px; }
   .ask-foot textarea{ flex:1; min-height:38px; font-size:13.5px; }
@@ -331,7 +331,7 @@
   .ring .ring-track{ stroke:color-mix(in srgb, var(--ink) 10%, transparent); }
   .ring .ring-fill{ stroke:var(--moss); transition:stroke-dashoffset .6s ease; }
   .ring-label{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; line-height:1.05; }
-  .ring-label b{ font-family:"Fraunces",serif; font-size:19px; }
+  .ring-label b{ font-family:"Fraunces","Frank Ruhl Libre",serif; font-size:19px; }
   .ring-label span{ font-size:10px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.05em; }
   .hero-weather{
     display:flex; align-items:center; gap:12px; margin-top:14px; padding:10px 12px;
@@ -339,7 +339,7 @@
   }
   .hero-weather .icon-lg{ width:30px; height:30px; flex:none; color:var(--moss); }
   .hero-weather .icon-lg .icon{ width:30px; height:30px; }
-  .hero-weather .temp{ font-family:"Fraunces",serif; font-size:19px; font-weight:600; }
+  .hero-weather .temp{ font-family:"Fraunces","Frank Ruhl Libre",serif; font-size:19px; font-weight:600; }
   .hero-weather .desc{ font-size:13px; color:var(--ink-soft); }
   .hero-weather .loc{ font-size:11.5px; color:var(--ink-faint); }
   .hero-weather .wx-text{ flex:1; min-width:0; }
@@ -384,7 +384,7 @@
   .tip-head{ display:flex; align-items:center; gap:10px; }
   .tip-emoji{ font-size:30px; line-height:1; flex:none; }
   .tip-kicker{ font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-soft); }
-  .tip-title{ font-family:"Fraunces",serif; font-weight:600; font-size:17px; line-height:1.2; }
+  .tip-title{ font-family:"Fraunces","Frank Ruhl Libre",serif; font-weight:600; font-size:17px; line-height:1.2; }
   .tip-body{ font-size:13.5px; color:var(--ink-soft); flex:1; }
   .tip-actions{ display:flex; align-items:center; gap:8px; margin-top:6px; }
   .tip-added{ font-size:13px; font-weight:600; color:var(--good); display:flex; align-items:center; gap:6px; min-height:36px; }
@@ -410,7 +410,7 @@
   .task-mini.done .task-mini-icon{ opacity:.45; }
   .swipe-wrap{ position:relative; overflow:hidden; border-radius:10px; }
   .swipe-bg{
-    position:absolute; inset:0; display:flex; align-items:center; padding-left:18px; gap:8px;
+    position:absolute; inset:0; display:flex; align-items:center; padding-inline-start:18px; gap:8px;
     background:var(--good); color:#fff; font-weight:700; font-size:13.5px; opacity:0; transition:opacity .15s ease;
   }
   .swipe-wrap.dragging .swipe-bg{ opacity:1; }
@@ -457,8 +457,8 @@
   .lib-toolbar{ display:flex; flex-direction:column; gap:10px; margin-bottom:14px; }
   .lib-toolbar-row{ display:flex; gap:8px; align-items:center; }
   .search-wrap{ position:relative; flex:1; }
-  .search-wrap .icon{ position:absolute; left:12px; top:50%; transform:translateY(-50%); color:var(--ink-faint); }
-  .search-wrap input{ padding-left:36px; border-radius:100px; }
+  .search-wrap .icon{ position:absolute; inset-inline-start:12px; top:50%; transform:translateY(-50%); color:var(--ink-faint); }
+  .search-wrap input{ padding-inline-start:36px; border-radius:100px; }
   .filter-chips{ display:flex; gap:6px; overflow-x:auto; padding-bottom:2px; scrollbar-width:none; }
   .filter-chips::-webkit-scrollbar{ display:none; }
   .fchip{
@@ -486,7 +486,7 @@
     position:absolute; left:0; right:0; bottom:0; padding:28px 12px 10px;
     background:linear-gradient(to top, rgba(10,16,10,.72), rgba(10,16,10,0)); color:var(--on-photo);
   }
-  .plant-card-name{ font-family:"Fraunces",serif; font-weight:600; font-size:17px; line-height:1.15; text-shadow:0 1px 2px rgba(0,0,0,.3); }
+  .plant-card-name{ font-family:"Fraunces","Frank Ruhl Libre",serif; font-weight:600; font-size:17px; line-height:1.15; text-shadow:0 1px 2px rgba(0,0,0,.3); }
   .plant-card-sub{ font-size:12px; opacity:.9; margin-top:2px; }
   .card-badges{ position:absolute; top:8px; left:8px; right:8px; display:flex; flex-wrap:wrap; gap:4px; justify-content:space-between; align-items:flex-start; }
   .level-badge{
@@ -497,7 +497,7 @@
     background:var(--warn); color:#fff; border-radius:100px;
     font-size:11.5px; font-weight:700; padding:3px 9px;
   }
-  .plant-next{ padding:10px 12px 12px; font-size:12.5px; color:var(--ink-soft); display:flex; align-items:flex-start; gap:6px; min-height:40px; text-align:left; }
+  .plant-next{ padding:10px 12px 12px; font-size:12.5px; color:var(--ink-soft); display:flex; align-items:flex-start; gap:6px; min-height:40px; text-align:start; }
   .plant-next-text{ flex:1; min-width:0; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; line-height:1.35; }
   .plant-next-text b{ color:var(--ink); font-weight:700; }
   .plant-next.overdue .plant-next-text b{ color:var(--warn); }
@@ -527,14 +527,14 @@
   .detail-hero .plant-card-name{ font-size:26px; }
   .detail-hero .plant-card-sub{ font-size:13px; }
   .hero-close{
-    position:absolute; top:12px; right:12px; width:40px; height:40px; border-radius:50%; border:none; cursor:pointer;
+    position:absolute; top:12px; inset-inline-end:12px; width:40px; height:40px; border-radius:50%; border:none; cursor:pointer;
     background:color-mix(in srgb, var(--surface) 85%, transparent); color:var(--ink); font-size:22px; line-height:1;
     display:flex; align-items:center; justify-content:center; backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px);
   }
   .level-block{ display:flex; flex-wrap:wrap; align-items:center; gap:10px 12px; padding:12px 14px; border-radius:12px; background:var(--surface-sunk); margin-bottom:14px; }
   .level-emoji{ font-size:28px; flex:none; }
   .level-main{ flex:1 1 200px; min-width:0; }
-  .level-btn{ margin-left:auto; }
+  .level-btn{ margin-inline-start:auto; }
   .level-title{ font-weight:700; font-size:14px; display:flex; justify-content:space-between; gap:8px; }
   .level-title span{ font-weight:500; color:var(--ink-faint); font-size:12.5px; }
   .level-main .grade-track{ margin-top:6px; }
@@ -544,7 +544,7 @@
   .detail-tabs .seg button{ flex:1; }
   .journal-card{
     width:150px; border:1px solid var(--line); border-radius:12px; overflow:hidden; background:var(--surface); padding:0;
-    text-align:left; font:inherit; color:var(--ink); cursor:default;
+    text-align:start; font:inherit; color:var(--ink); cursor:default;
   }
   .journal-card img{ width:100%; aspect-ratio:1; object-fit:cover; display:block; }
   .journal-card .jc-body{ padding:8px 10px 10px; }
@@ -605,7 +605,7 @@
     .tab-btn.active{ border-top-color:var(--moss); border-bottom-color:transparent; }
 
     /* Ask button: a round icon above the tab bar; the panel goes full screen. */
-    .ask-fab{ right:max(16px, env(safe-area-inset-right)); bottom:calc(var(--tabbar-h) + 14px + env(safe-area-inset-bottom)); width:56px; height:56px; padding:0; justify-content:center; }
+    .ask-fab{ inset-inline-end:max(16px, env(safe-area-inset-right)); bottom:calc(var(--tabbar-h) + 14px + env(safe-area-inset-bottom)); width:56px; height:56px; padding:0; justify-content:center; }
     .ask-fab .icon{ width:24px; height:24px; }
     .ask-fab-label{ position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0); }
     .ask-panel{ inset:0; width:auto; max-width:none; max-height:none; height:100dvh; border-radius:0; border:none; z-index:55; }
@@ -652,7 +652,7 @@
   .ready-card.is-ready{ border-style:solid; border-color:var(--moss); background:var(--moss-tint); }
   .ready-head{ display:flex; gap:12px; align-items:flex-start; }
   .ready-icon{ font-size:26px; line-height:1; flex:none; }
-  .ready-title{ font-family:"Fraunces",serif; font-weight:600; font-size:17px; }
+  .ready-title{ font-family:"Fraunces","Frank Ruhl Libre",serif; font-weight:600; font-size:17px; }
   .ready-sub{ font-size:13px; color:var(--ink-soft); margin-top:2px; }
   .ready-meter-row{ display:flex; align-items:center; gap:10px; margin:14px 0 6px; }
   .ready-meter{ flex:1; display:flex; gap:5px; }
@@ -661,7 +661,7 @@
   .ready-count{ font-size:12.5px; font-weight:700; color:var(--ink-soft); flex:none; }
   .ready-list{ display:flex; flex-direction:column; margin:6px 0 12px; }
   .ready-item{
-    display:flex; align-items:center; gap:10px; width:100%; text-align:left; background:none; border:none; border-bottom:1px solid var(--line);
+    display:flex; align-items:center; gap:10px; width:100%; text-align:start; background:none; border:none; border-bottom:1px solid var(--line);
     padding:10px 2px; min-height:48px; font:inherit; font-size:14px; color:var(--ink); cursor:pointer;
   }
   .ready-item:last-child{ border-bottom:none; }
@@ -722,7 +722,7 @@
   .count-badge{
     display:inline-flex; align-items:center; justify-content:center; min-width:22px; height:22px; padding:0 6px;
     border-radius:11px; background:#E5372B; color:#fff; font-size:12.5px; font-weight:700; line-height:1;
-    font-family:"Work Sans",system-ui,sans-serif; box-shadow:0 0 0 2.5px var(--ground), 0 2px 6px rgba(229,55,43,.35);
+    font-family:"Work Sans","Heebo",system-ui,sans-serif; box-shadow:0 0 0 2.5px var(--ground), 0 2px 6px rgba(229,55,43,.35);
     animation:badge-pop .35s cubic-bezier(.3,1.6,.5,1);
   }
   @keyframes badge-pop{ from{ transform:scale(0); } }
@@ -756,14 +756,14 @@
   .rt-band{ fill:none; stroke:var(--surface); stroke-width:30; opacity:.92; }
   .rt-track{ fill:none; stroke:color-mix(in srgb, var(--ink) 10%, transparent); stroke-width:7; }
   .rt-fill{ fill:none; stroke:var(--moss); stroke-width:7; stroke-linecap:round; transition:stroke-dashoffset .8s ease; }
-  .rt-text{ font-family:"Work Sans",system-ui,sans-serif; font-size:12.5px; font-weight:700; letter-spacing:.09em; fill:var(--ink-soft); }
+  .rt-text{ font-family:"Work Sans","Heebo",system-ui,sans-serif; font-size:12.5px; font-weight:700; letter-spacing:.09em; fill:var(--ink-soft); }
   .rt-text-bottom{ fill:var(--moss-strong); }
   .rt-text-bottom.warn{ fill:#E5372B; }
   .rt-text-bottom.lock{ fill:var(--ink-faint); }
   /* On the rim's right edge, at ~20° above horizontal: the top and bottom
      rim text arcs never reach that far round. */
   .rt-badge{ position:absolute; top:22%; right:-3%; min-width:26px; height:26px; border-radius:13px; font-size:13.5px; z-index:2; }
-  .rt-name{ font-family:"Fraunces",serif; font-weight:600; font-size:16px; line-height:1.15; text-align:center; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:2px; }
+  .rt-name{ font-family:"Fraunces","Frank Ruhl Libre",serif; font-weight:600; font-size:16px; line-height:1.15; text-align:center; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:2px; }
   .rt-sub{ font-size:12px; color:var(--ink-faint); text-align:center; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .round-tile.add .rt-add{ background:transparent; border:2px dashed color-mix(in srgb, var(--moss) 45%, transparent); box-shadow:none; color:var(--moss); font-size:40px; font-weight:300; }
   .round-tile.add .rt-name{ color:var(--moss); }
@@ -771,9 +771,9 @@
 
   /* avatar + tab badges */
   .avatar-wrap{ position:relative; display:block; }
-  .av-badge{ position:absolute; top:-6px; right:-8px; }
+  .av-badge{ position:absolute; top:-6px; inset-inline-end:-8px; }
   .tab-icon{ position:relative; display:inline-flex; }
-  .tab-badge{ position:absolute; top:-7px; right:-12px; min-width:18px; height:18px; padding:0 5px; font-size:11px; border-radius:9px; }
+  .tab-badge{ position:absolute; top:-7px; inset-inline-end:-12px; min-width:18px; height:18px; padding:0 5px; font-size:11px; border-radius:9px; }
 
   /* plant page notification list */
   .alerts-block{ border:1px solid color-mix(in srgb, #E5372B 30%, var(--line)); background:color-mix(in srgb, #E5372B 6%, var(--surface)); border-radius:14px; padding:12px 14px; margin-bottom:14px; }
@@ -790,5 +790,18 @@
   .alert-text b{ display:block; font-weight:600; }
   .alert-sub{ display:block; font-size:12px; color:var(--ink-faint); }
   .danger-zone{ margin-top:24px; padding-top:14px; border-top:1px solid var(--line); }
-  .danger-zone .danger-btn{ padding-left:4px; }
-  .danger-note{ font-size:12px; color:var(--ink-faint); margin-top:2px; padding-left:4px; }
+  .danger-zone .danger-btn{ padding-inline-start:4px; }
+  .danger-note{ font-size:12px; color:var(--ink-faint); margin-top:2px; padding-inline-start:4px; }
+
+  /* Language toggle (onboarding's first screen, Settings). */
+  .lang-seg{ margin-bottom:14px; }
+  .field .lang-seg{ margin-bottom:0; }
+  /* Names and free text (typed, or written by the AI before a language
+     switch) can be in either language: lay each out in its own direction,
+     so an English name in the Hebrew UI is cut at its end ("Meyer lem…")
+     and an English sentence keeps its full stop on the right. */
+  .avatar-name, .rt-name, .rt-sub, .task-mini-title, .plant-card-name,
+  .tip-title, .tip-body, .task-desc, .agent-note, .bubble, .comment-item, .jc-text, .alert-text b{ unicode-bidi:plaintext; }
+
+  /* Home banner: "Some of your garden is still in English". */
+  .translate-card{ margin-bottom:16px; }
