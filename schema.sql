@@ -112,3 +112,15 @@ create table if not exists device_tokens (
   platform     text not null default 'ios',
   created_at   timestamptz not null default now()
 );
+
+-- ---------------------------------------------------------------------
+-- garden_cache — small key -> JSON store: the garden's reverse-geocoded
+-- place name and measured climate (lib/garden-context.js), and generated
+-- monthly garden tips (lib/handlers/garden-tips.js). Also created lazily
+-- on first use, so no separate migration run is needed.
+-- ---------------------------------------------------------------------
+create table if not exists garden_cache (
+  key          text primary key,
+  value        jsonb not null,
+  updated_at   timestamptz not null default now()
+);

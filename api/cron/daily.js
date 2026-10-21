@@ -3,7 +3,9 @@
 // Replaces the Claude Code Remote scheduled trigger's two responsibilities,
 // as described in the AI-touchpoints doc: (1) fetch weather and decide
 // whether a weather-alert task is warranted, (2) create the weekly photo
-// check-in on the configured day. Unlike the other endpoints in this repo,
+// check-in on the configured day — plus (3) keeping every researched
+// plant's care-guide tasks topped up over a rolling 12 months (see
+// lib/schedule.js). Unlike the other endpoints in this repo,
 // this ISN'T a line-for-line port — that daily logic lived in the external
 // scheduled trigger's own instructions, not in garden-companion.html, so
 // this is a fresh implementation matching the documented behavior. Review
@@ -19,6 +21,8 @@ const { completeJson } = require('../../lib/ai');
 const { todayISO } = require('../../lib/dates');
 const { friendlyWeather } = require('../../lib/weather');
 const { jsonParam } = require('../../lib/mappers');
+const { materializeScheduledTasks } = require('../../lib/schedule');
+const { getGardenContext } = require('../../lib/garden-context');
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -49,7 +53,7 @@ module.exports = async function handler(req, res) {
     }
   }
 
-  const summary = { weatherChecked: false, alertCreated: false, checkinTasksCreated: 0, errors: [] };
+  const summary = { weatherChecked: false, alertCreated: false, checkinTasksCreated: 0, scheduledTasksCreated: 0, errors: [] };
 
   // --- 1. Weather check + alert decision -------------------------------
   try {
@@ -65,7 +69,9 @@ module.exports = async function handler(req, res) {
 
       const plants = await sql`select name, type from plants`;
       const plantList = plants.map((p) => p.name + ' (' + p.type + ')').join(', ') || 'no plants yet';
+      const garden = await getGardenContext();
       const prompt =
+        garden.text + '\n\n' +
         'You are a home gardening expert reviewing a 3-day weather forecast (Open-Meteo JSON, temperatures in the API\'s default units) ' +
         'for a garden with these plants: ' + plantList + '. Forecast: ' + JSON.stringify(forecast.daily) + '. ' +
         'Decide if anything in this forecast (frost, heat, heavy rain/wind, etc.) genuinely warrants a proactive heads-up for THIS garden ' +
@@ -125,6 +131,16 @@ module.exports = async function handler(req, res) {
     }
   } catch (e) {
     summary.errors.push('weekly check-in step failed: ' + String(e.message || e));
+  }
+
+  // --- 3. Care-guide tasks: keep a rolling 12 months scheduled ---------
+  try {
+    const researched = await sql`select id, name, yearly_schedule from plants where researched = true`;
+    for (const p of researched) {
+      summary.scheduledTasksCreated += await materializeScheduledTasks({ id: p.id, name: p.name }, p.yearly_schedule || []);
+    }
+  } catch (e) {
+    summary.errors.push('schedule top-up step failed: ' + String(e.message || e));
   }
 
   res.status(200).json(summary);

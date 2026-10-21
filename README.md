@@ -77,10 +77,9 @@ headroom before hitting the cap again.
   and a plain-language weather hint), a "Your garden" avatar row, garden
   tips, This week grouped by day (swipe a row right to mark it done, with
   Undo), and a weekly "Nice work" summary with a streak.
-- **Garden tips** (`public/js/tips.js`): a curated seasonal + weather tip
-  library, filtered by month (flipped for the southern hemisphere — see the
-  "Seasons for garden tips" setting, stored as `location.hemisphere`) and by
-  the plant types in the garden. "Add as task" creates a task with
+- **Garden tips**: written per month by the model for this garden's
+  location, climate and plants (`GET /api/tips`, see the AI section below),
+  plus forecast-driven weather tips (`public/js/tips.js`). "Add as task" creates a task with
   `kind: "tip"` through `POST /api/tasks` — no new Function. "Not now" is
   remembered per device in `localStorage`.
 - **My garden** (the plant library tab): photo-first cards with a growth level (Seedling → Sprout →
@@ -130,11 +129,40 @@ analysis are all ported. Live `onSnapshot` updates are approximated with a
 45-second poll.
 
 Every AI touchpoint goes through `lib/ai.js` — one direct Anthropic Messages
-API caller for the whole app, all requiring `ANTHROPIC_API_KEY`:
+API caller for the whole app, all requiring `ANTHROPIC_API_KEY`. Model:
+**Claude Sonnet 5.5** (`claude-sonnet-5-5`) with adaptive thinking — effort
+`low` by default, `medium` for care guides, photo/problem diagnoses and
+garden tips; `max_tokens` 16000 (thinking counts toward it); replies are
+read from `text` blocks by type; JSON replies for care guides and tips use
+structured outputs (`output_config.format`); declines (`stop_reason:
+"refusal"`) are retried server-side on another model (`fallbacks: "default"`,
+beta `server-side-fallback-2026-07-01`).
+
+Advice is grounded in the garden's real location: `lib/garden-context.js`
+builds a short context for every advice prompt (care guides, tips, photo and
+problem diagnoses, Ask, the daily weather alert) — the place name from
+Settings (a GPS-only "Current location" goes in as coordinates alone), coordinates, and
+month-by-month highs/lows/rain plus frost nights measured over the past year
+(Open-Meteo archive API) — with an instruction to time everything to the
+local climate (no frost protection where it doesn't freeze). The climate
+summary is cached in the `garden_cache` table (created on first use; also
+in `schema.sql`), climate refreshed every 90 days.
+
+Care guides ask for 6-12 schedule entries covering the whole year, and
+`lib/schedule.js` turns them into tasks over a **rolling 12 months** (next
+occurrence of each month, this year or next), topped up daily by the cron.
+
+Garden tips are generated per month for the garden (`GET /api/tips?month=N`,
+rewritten to `api/ask.js?mode=tips` → `lib/handlers/garden-tips.js` to stay
+within the Function cap) and cached per month + garden signature
+(location + plants) in `garden_cache`, so each month costs one AI call until
+the garden changes. `public/js/tips.js` now only holds the forecast-driven
+weather tips.
 
 | Endpoint | Calls |
 |---|---|
 | `POST /api/plants/:id/research` | `completeJson()` |
+| `GET /api/tips?month=N` (garden tips) | `completeJson()`, cached per month |
 | `POST /api/plants/:id/build-card` (the "Add a plant" wizard) | `completeJson()`, with photos if given |
 | `POST /api/plant-extract` (onboarding + quick-add) | `completeJson()` |
 | `POST /api/plants/:id/details` (get-to-know answer normalization) | `complete()` |
