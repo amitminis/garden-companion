@@ -146,9 +146,18 @@ chosen on onboarding's first screen or in Settings and saved as
   per language), photo/problem diagnoses, weather alerts, Ask. Strings
   the server writes itself (diagnosis follow-up tasks, weekly check-in,
   fallbacks) come from `lib/messages.js`.
-- **Existing content** keeps the language it was written in. Settings →
-  "Rebuild all N care guides" rewrites every guide and its year of tasks
-  in the current language (and location).
+- **Existing content** (written before a language switch, or typed in
+  another language) is translated in place by `POST /api/translate`
+  (`lib/handlers/translate-garden.js`, sharing `api/settings.js`): one call
+  per plant — name, care guide, schedule, photo notes, details and all its
+  tasks together, so the new name is used consistently — and one for
+  everything else (tasks without a plant, the location name, the weather
+  alert). Only foreign-language strings are sent; preset answers stay
+  English keys. Home shows a "still in English — translate everything"
+  banner whenever any such content exists; Settings offers the same, plus
+  "Rebuild all N care guides" to rewrite guides from scratch.
+- `index.html` and the web app manifest default to Hebrew (name
+  "שותף לגינה"), so nothing English shows before the app loads.
 - **Adding a string**: write it in English inside `tr("…")`, add the
   Hebrew to `i18n.js`. Anything missing simply shows in English.
 

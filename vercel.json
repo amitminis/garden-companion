@@ -7,6 +7,10 @@
   ],
   "rewrites": [
     {
+      "source": "/api/translate",
+      "destination": "/api/settings?action=translate"
+    },
+    {
       "source": "/api/tips",
       "destination": "/api/ask?mode=tips"
     },

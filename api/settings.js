@@ -5,14 +5,18 @@
 //                          "init" call)
 // PATCH /api/settings -> partial update (location, photoCheckinDay,
 //                          language, ...)
+// POST  /api/translate -> lib/handlers/translate-garden.js (via a
+//                          vercel.json rewrite, sharing this Function)
 
 const sql = require('../lib/db');
 const { settingsFromRow, SETTINGS_FIELD_MAP, jsonParam } = require('../lib/mappers');
 const { ensureLanguageColumn, LANGUAGES } = require('../lib/language');
+const translateGarden = require('../lib/handlers/translate-garden');
 
 module.exports = async function handler(req, res) {
   // Best effort: the app must still boot if this one-time alter fails.
   await ensureLanguageColumn().catch(() => {});
+  if (req.query && req.query.action === 'translate') return translateGarden(req, res);
   if (req.method === 'GET') {
     let [row] = await sql`select * from settings where id = true`;
     if (!row) {

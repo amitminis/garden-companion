@@ -803,3 +803,5 @@
   .avatar-name, .rt-name, .rt-sub, .task-mini-title, .plant-card-name,
   .tip-title, .tip-body, .task-desc, .agent-note, .bubble, .comment-item, .jc-text, .alert-text b{ unicode-bidi:plaintext; }
 
+  /* Home banner: "Some of your garden is still in English". */
+  .translate-card{ margin-bottom:16px; }

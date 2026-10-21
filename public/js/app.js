@@ -1304,6 +1304,8 @@
 
   function tasksHomeSection(){
     var wrap = el("div", {});
+    var translate = translateBanner();
+    if (translate) wrap.appendChild(translate);
     wrap.appendChild(heroCard());
     var garden = gardenRow();
     if (garden) wrap.appendChild(garden);
@@ -2543,6 +2545,8 @@
         tr("Weather and care checks run early each morning. New plants get researched within about an hour of adding them — no need to wait for the daily check-in.")
       ]));
 
+      var translateBlock = translateGardenBlock();
+      if (translateBlock) container.appendChild(translateBlock);
       var rebuild = rebuildGuidesBlock();
       if (rebuild) container.appendChild(rebuild);
 
@@ -2561,6 +2565,109 @@
       });
       container.appendChild(saveBtn);
     });
+  }
+
+  // ---- Translating what's already saved. Content written before a
+  // language switch (care guides, tasks, tips, diagnoses) or typed in
+  // another language (plant names) stays in that language until it's
+  // translated: POST /api/translate, once per plant and once for the rest
+  // (lib/handlers/translate-garden.js). Offered by a banner on Home and in
+  // Settings whenever something is still in another language. ----
+  var PRESET_VALUES = [].concat(SPOT_OPTIONS, AGE_OPTIONS, SUN_OPTIONS, WATERING_OPTIONS, GROUND_OPTIONS);
+  function isForeign(s){
+    if (typeof s !== "string" || !s.trim() || PRESET_VALUES.indexOf(s) !== -1) return false;
+    var hebrew = /[\u0590-\u05FF]/.test(s);
+    return I18N.isRTL() ? (/[A-Za-z]/.test(s) && !hebrew) : hebrew;
+  }
+  function plantIsForeign(p){
+    var texts = [p.name, p.notes, p.sizeInfo, p.activeIssue && p.activeIssue.description]
+      .concat(Object.keys(p.careProfile || {}).map(function(k){ return p.careProfile[k]; }))
+      .concat((p.yearlySchedule || []).map(function(e){ return e.title + " " + e.note; }))
+      .concat((p.photos || []).map(function(ph){ return ph.summary; }));
+    if (!PRESET_VALUES.some(function(v){ return v === p.spot; })) texts.push(p.spot);
+    return texts.some(isForeign) || state.tasks.some(function(t){ return t.plantId === p.id && (isForeign(t.title) || isForeign(t.description)); });
+  }
+  function foreignContent(){
+    var label = (state.settings && state.settings.location && state.settings.location.label) || "";
+    return {
+      plants: state.plants.filter(plantIsForeign),
+      general: state.tasks.some(function(t){ return !t.plantId && (isForeign(t.title) || isForeign(t.description)); }) ||
+        (!/^(current location|unspecified)$/i.test(label) && isForeign(label)) || !!(state.weather && isForeign(state.weather.alert))
+    };
+  }
+  var translating = null; // {done, total} while a translation runs
+  var translateBannerHidden = false;
+  async function translateGarden(onProgress){
+    var f = foreignContent();
+    var jobs = f.plants.map(function(p){ return {body:{plantId:p.id}, name:p.name}; });
+    if (f.general) jobs.push({body:{scope:"general"}, name:tr("Tasks and location")});
+    var failed = [];
+    translating = {done:0, total:jobs.length};
+    for (var i = 0; i < jobs.length; i++){
+      translating.name = jobs[i].name;
+      if (onProgress) onProgress();
+      try { await api("/translate", {method:"POST", body:jobs[i].body}); }
+      catch(e){ failed.push(jobs[i].name); }
+      translating.done = i + 1;
+    }
+    translating = null;
+    tipsByMonth = {}; // plant names changed — tips are rewritten for them
+    try { await loadGardenData(); } catch(e){}
+    return failed;
+  }
+  function translateHeadline(){
+    return I18N.isRTL() ? tr("Some of your garden is still in English") : tr("Some of your garden is still in Hebrew");
+  }
+  function translateButtonLabel(){
+    return I18N.isRTL() ? tr("Translate everything into Hebrew") : tr("Translate everything into English");
+  }
+  function translateBanner(){
+    if (translateBannerHidden && !translating) return null;
+    var f = foreignContent();
+    if (!translating && !f.plants.length && !f.general) return null;
+    var status = el("div", {class:"ready-sub"}, [translating
+      ? tr("Translating {name} ({n} of {total})…", {name:translating.name, n:translating.done + 1, total:translating.total})
+      : tr("Plant names, care guides and tasks written before the language switch. One tap translates them all — about half a minute.")]);
+    var btn = el("button", {class:"btn btn-primary btn-sm"}, [translateButtonLabel()]);
+    btn.disabled = !!translating;
+    btn.addEventListener("click", async function(){
+      btn.disabled = true;
+      var failed = await translateGarden(function(){ if (!modalOpenFor) renderShell(); });
+      // Done either way: what's left is something the model chose to keep
+      // (a Latin botanical name) or a failure the toast reports — Settings
+      // still offers another run.
+      translateBannerHidden = true;
+      renderShell();
+      showToast(failed.length ? tr("Translated, except: {names} — try again in a moment.", {names:failed.join(", ")}) : tr("🌐 Everything is translated"));
+    });
+    var later = el("button", {class:"btn btn-ghost btn-sm"}, [tr("Not now")]);
+    later.addEventListener("click", function(){ translateBannerHidden = true; renderShell(); });
+    return el("div", {class:"ready-card translate-card"}, [
+      el("div", {class:"ready-head"}, [
+        el("span", {class:"ready-icon", "aria-hidden":"true"}, ["🌐"]),
+        el("div", {}, [el("div", {class:"ready-title"}, [translateHeadline()]), status])
+      ]),
+      el("div", {class:"row", style:"gap:8px;margin-top:10px;"}, [btn, translating ? null : later])
+    ]);
+  }
+  function translateGardenBlock(){
+    var f = foreignContent();
+    if (!f.plants.length && !f.general) return null;
+    var status = el("div", {class:"thinking", style:"min-height:18px;margin-top:6px;"});
+    var btn = el("button", {class:"btn btn-sm btn-primary"}, [translateButtonLabel()]);
+    btn.addEventListener("click", async function(){
+      btn.disabled = true;
+      var failed = await translateGarden(function(){
+        status.textContent = tr("Translating {name} ({n} of {total})…", {name:translating.name, n:translating.done + 1, total:translating.total});
+      });
+      btn.disabled = false;
+      status.textContent = failed.length ? tr("Translated, except: {names} — try again in a moment.", {names:failed.join(", ")}) : tr("🌐 Everything is translated");
+    });
+    return el("div", {class:"field", style:"border-top:1px solid var(--line);padding-top:14px;"}, [
+      el("label", {}, [translateHeadline()]),
+      el("div", {style:"font-size:12.5px;color:var(--ink-soft);margin-bottom:8px;"}, [tr("Plant names, care guides and tasks written before the language switch. One tap translates them all — about half a minute.")]),
+      btn, status
+    ]);
   }
 
   // Settings' "Rebuild all care guides": re-runs every plant's care guide

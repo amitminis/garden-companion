@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Garden Companion</title>
+<title>שותף לגינה</title>
 <meta name="theme-color" content="#F1F3EC" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#151A14" media="(prefers-color-scheme: dark)">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="Garden">
+<meta name="apple-mobile-web-app-title" content="גינה">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
@@ -17,7 +17,7 @@
 <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
-<div id="boot" class="onboard-wrap"><div class="onboard-card" style="text-align:center;color:var(--ink-faint);font-size:13.5px;">Opening the garden…</div></div>
+<div id="boot" class="onboard-wrap"><div class="onboard-card" style="text-align:center;color:var(--ink-faint);font-size:13.5px;">פותחים את הגינה…</div></div>
 <div id="app" hidden></div>
 
 <div class="overlay" id="overlay" hidden>
@@ -26,16 +26,17 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-<button class="ask-fab" id="askFab" aria-label="Ask your gardener" hidden>
+<!-- Hebrew is the default; app.js applyStaticText() switches this text to the saved language. -->
+<button class="ask-fab" id="askFab" aria-label="לשאול את הגנן" hidden>
   <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2c-4 0-7 3-7 7 0 4 3 5 3 8 0 1 1 2 2 2h4c1 0 2-1 2-2 0-3 3-4 3-8 0-4-3-7-7-7z"/><path d="M9 21h6M10 18h4"/></svg>
-  <span class="ask-fab-label">Ask your gardener</span>
+  <span class="ask-fab-label">לשאול את הגנן</span>
 </button>
 <div class="ask-panel" id="askPanel" hidden>
-  <div class="ask-head"><strong>Ask your gardener</strong><button class="modal-close" id="askClose" aria-label="Close">&times;</button></div>
+  <div class="ask-head"><strong>לשאול את הגנן</strong><button class="modal-close" id="askClose" aria-label="סגירה">&times;</button></div>
   <div class="ask-body" id="askBody"></div>
   <div class="ask-foot">
-    <textarea id="askInput" placeholder="How's my tomato looking this week?"></textarea>
-    <button class="btn btn-primary btn-sm" id="askSend">Send</button>
+    <textarea id="askInput" placeholder="איך העגבנייה שלי נראית השבוע?"></textarea>
+    <button class="btn btn-primary btn-sm" id="askSend">שליחה</button>
   </div>
 </div>
 

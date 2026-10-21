@@ -494,6 +494,15 @@
     "Rebuilding {name} ({n} of {total})…": "בונה מחדש: {name} ({n} מתוך {total})…",
     "Done, except: {names} — try again in a moment.": "הסתיים, חוץ מ: {names} — כדאי לנסות שוב בעוד רגע.",
     "All care guides rebuilt.": "כל מדריכי הטיפול נבנו מחדש.",
+    "Some of your garden is still in English": "חלק מהתוכן בגינה עדיין באנגלית",
+    "Some of your garden is still in Hebrew": "חלק מהתוכן בגינה עדיין בעברית",
+    "Translate everything into Hebrew": "לתרגם הכול לעברית",
+    "Translate everything into English": "לתרגם הכול לאנגלית",
+    "Plant names, care guides and tasks written before the language switch. One tap translates them all — about half a minute.": "שמות צמחים, מדריכי טיפול ומשימות שנכתבו לפני החלפת השפה. הקשה אחת מתרגמת את כולם — בערך חצי דקה.",
+    "Translating {name} ({n} of {total})…": "מתרגם: {name} ({n} מתוך {total})…",
+    "Translated, except: {names} — try again in a moment.": "תורגם, חוץ מ: {names} — כדאי לנסות שוב בעוד רגע.",
+    "🌐 Everything is translated": "🌐 הכול תורגם",
+    "Tasks and location": "משימות ומיקום",
 
     // ---- calendar
     "Add a plant and its yearly schedule will show up here.": "הוסיפו צמח והלוח השנתי שלו יופיע כאן.",

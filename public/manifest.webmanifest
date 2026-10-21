@@ -1,7 +1,9 @@
 {
-  "name": "Garden Companion",
-  "short_name": "Garden",
-  "description": "Your garden's care plan, tasks and plant library.",
+  "name": "שותף לגינה",
+  "short_name": "גינה",
+  "description": "תוכנית הטיפול, המשימות והצמחים של הגינה שלכם.",
+  "lang": "he",
+  "dir": "rtl",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
