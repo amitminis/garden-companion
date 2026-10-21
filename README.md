@@ -9,7 +9,7 @@ native/iOS layer yet — that's Capacitor on top of this, later.
 ## What's here
 
 ```
-public/            static frontend (index.html, css/, js/app.js)
+public/            static frontend (index.html, css/, js/app.js, js/i18n.js)
 api/
   plants/index.js       GET (list), POST (create)
   plant-detail.js        GET/PATCH/DELETE a plant, plus its research/
@@ -39,6 +39,9 @@ lib/
                           care guide + (if photos given) size/health, in one
                           request; see api/plant-detail.js's build-card action
   weather.js               Open-Meteo forecast -> friendly weather-card shape
+  language.js              settings.language (he | en) + the "write in X"
+                          instruction every AI prompt gets
+  messages.js              the few strings the server writes itself, per language
   handlers/               the actual per-action logic for plant-detail.js /
                           task-detail.js (see "Function count" below)
 schema.sql             Neon Postgres schema
@@ -116,6 +119,38 @@ headroom before hitting the cap again.
   early that month.
 - **Knowledge score** (the level %): spot/sun/watering/soil/age 10 each (5
   for "Not sure"), species 5, care guide 25, a photo 15, a recent photo 5.
+
+## Languages (Hebrew / English)
+
+The whole app works in Hebrew (the default, right-to-left) or English,
+chosen on onboarding's first screen or in Settings and saved as
+`settings.language` (column added lazily by `lib/language.js`).
+
+- **UI**: every string in `app.js` / `tips.js` is English source text
+  passed through `tr()` / `trn()` (plurals, with a Hebrew dual "#2" form)
+  from `public/js/i18n.js`, which holds the Hebrew dictionary. Constant
+  tables mark strings with `N_()` and translate where they render, so
+  switching language re-renders without a reload. `I18N.setLang()` sets
+  `<html lang dir>`; CSS uses logical properties (`inset-inline-end`,
+  `text-align:start`, …) so the layout mirrors. Swipe-to-complete goes
+  leftward in Hebrew; the calendar's arrows and the before/after photo
+  slider are direction-aware. Hebrew fonts: Heebo / Frank Ruhl Libre as
+  fallbacks after the Latin fonts.
+- **Saved values stay English**: preset answers (sun, watering, soil, age,
+  spot), plant types, task `reason`s and weekday names are stored as
+  English keys (the server and "Not sure" checks rely on them) and shown
+  translated (`optLabel()`, `typeLabel()`).
+- **AI output**: `getGardenContext().text` ends with "write everything
+  for the gardener in Hebrew/English" (`languageInstruction()`), and every
+  advice prompt includes that text — care guides, schedules, tips (cached
+  per language), photo/problem diagnoses, weather alerts, Ask. Strings
+  the server writes itself (diagnosis follow-up tasks, weekly check-in,
+  fallbacks) come from `lib/messages.js`.
+- **Existing content** keeps the language it was written in. Settings →
+  "Rebuild all N care guides" rewrites every guide and its year of tasks
+  in the current language (and location).
+- **Adding a string**: write it in English inside `tr("…")`, add the
+  Hebrew to `i18n.js`. Anything missing simply shows in English.
 
 ## What's ported vs. not
 
